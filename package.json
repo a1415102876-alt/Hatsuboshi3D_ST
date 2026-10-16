@@ -1,0 +1,13 @@
+{
+  "name": "hatsuboshi3d-st",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node tools/build.mjs",
+    "test": "node --test",
+    "preview": "node tools/preview.mjs",
+    "sync:source": "node tools/import-source.mjs"
+  },
+  "engines": { "node": ">=20" }
+}

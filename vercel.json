@@ -1,0 +1,35 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "routes": [
+    {
+      "src": "/(.*)",
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+        "X-Content-Type-Options": "nosniff"
+      },
+      "continue": true
+    },
+    { "handle": "filesystem" },
+    {
+      "src": "/(?:hatsu-produce-local/)?assets/(.*)",
+      "dest": "https://pub-cfdeb8f85de84d8193695eca002e7880.r2.dev/assets/$1"
+    },
+    {
+      "src": "/mmd-dialogue-stage/library/file/scenes/gakumas/(.*)",
+      "dest": "https://pub-2e2f5c45d3714278ab051f56652e15a6.r2.dev/scenes/$1"
+    },
+    {
+      "src": "/mmd-dialogue-stage/library/file/(.*)",
+      "dest": "https://pub-2e2f5c45d3714278ab051f56652e15a6.r2.dev/$1"
+    },
+    {
+      "src": "/mmd-dialogue-stage/(backgrounds_2d|npc-portraits|secondary-motion-profiles|camera-tracks|scenes|assets/facial-effects)/(.*)",
+      "dest": "https://pub-2e2f5c45d3714278ab051f56652e15a6.r2.dev/$1/$2"
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Art Deco 加载背景预览</title>
+  <link rel="stylesheet" href="./loading-background.css?v=20261006-artdeco-v4">
+  <style>
+    :root { color-scheme: light; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #fff8f6; }
+    body { font-family: "Noto Sans SC", "Microsoft YaHei", sans-serif; }
+    #loadingPreview { position: fixed; inset: 0; }
+    .preview-label { position: absolute; z-index: 4; right: 18px; bottom: 16px; color: rgba(97, 79, 78, .58); font-size: 12px; letter-spacing: .08em; pointer-events: none; }
+  </style>
+</head>
+<body>
+  <main id="loadingPreview" aria-label="Art Deco 动态加载背景预览"></main>
+  <span class="preview-label">SIMPLE LOADING / ART DECO BACKGROUND</span>
+  <script type="module">
+    import { createArtDecoLoadingBackground } from './loading-background.js?v=20261006-artdeco-v4';
+    createArtDecoLoadingBackground(document.querySelector('#loadingPreview'));
+  </script>
+</body>
+</html>
