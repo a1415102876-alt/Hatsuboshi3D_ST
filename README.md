@@ -21,7 +21,7 @@ vercel.json            静态发布与云资源路由
 
 这些设置已经写入 `vercel.json`。根网址自动进入 `/hatsu-produce-local/st.html`；`/st.html` 也提供同一个酒馆入口，独立页面为 `/hatsu-produce-local/index.html`，Stage 为 `/mmd-dialogue-stage/`。
 
-构建使用 Vercel 的 `VERCEL_URL` 写入本次部署的资源基址，供酒馆远程嵌入使用。如需固定自定义域名，可设置公开环境变量 `HATSU_PUBLIC_ORIGIN=https://你的域名`。这个变量只包含网址。
+生产构建使用 Vercel 的 `VERCEL_PROJECT_PRODUCTION_URL` 写入公开项目域名；预览构建使用 `VERCEL_URL`。如需固定自定义域名，可设置公开环境变量 `HATSU_PUBLIC_ORIGIN=https://你的域名`。这个变量只包含网址。酒馆加载脚本显式填写的 `window.HATSU_ASSET_BASE` 优先于入口内的默认地址，避免被需要登录的临时部署地址覆盖。
 
 ## 酒馆中加载
 

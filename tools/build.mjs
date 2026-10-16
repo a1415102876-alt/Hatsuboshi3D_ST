@@ -4,13 +4,18 @@ import {fileURLToPath} from 'node:url';
 
 export const root=fileURLToPath(new URL('../',import.meta.url));
 export function publicOrigin(env=process.env){
- const raw=env.HATSU_PUBLIC_ORIGIN||(env.VERCEL_URL?'https://'+env.VERCEL_URL:'');
+ const deploymentHost=env.VERCEL_ENV==='production'&&env.VERCEL_PROJECT_PRODUCTION_URL
+  ?env.VERCEL_PROJECT_PRODUCTION_URL:env.VERCEL_URL;
+ const raw=env.HATSU_PUBLIC_ORIGIN||(deploymentHost?'https://'+deploymentHost:'');
  if(!raw)return '';
  const url=new URL(raw);if(!['https:','http:'].includes(url.protocol)||url.username||url.password)throw new Error('Invalid public origin');
  return url.origin;
 }
 export function adaptFrontend(text,filename,origin='',localMedia=[]){
  if(filename==='st.html'){
+  // Synced legacy loaders must also preserve the public base chosen by the host.
+  text=text.replace(/if \(fromAttr\)(?:\s*\{\s*window\.HATSU_ASSET_BASE = fromAttr;\s*\}|\s+window\.HATSU_ASSET_BASE = fromAttr;)/,
+   'if (fromAttr && !String(window.HATSU_ASSET_BASE || "").trim()) {\n      window.HATSU_ASSET_BASE = fromAttr;\n    }');
   const base=origin?JSON.stringify(origin+'/hatsu-produce-local/'):"new URL('/hatsu-produce-local/', window.location.href).href";
   text=text.replace('/* HATSU_WORKER_INJECT_ASSET_BASE */',`window.HATSU_ASSET_BASE = window.HATSU_ASSET_BASE || ${base};`);
   if(origin)text=text.replace('data-asset-base=""',`data-asset-base="${origin}/hatsu-produce-local/"`);

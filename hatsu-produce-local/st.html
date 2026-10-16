@@ -28,7 +28,9 @@
 
   function absorbLoaderAssetBase() {
     const fromAttr = readLoaderAssetBaseAttr();
-    if (fromAttr) window.HATSU_ASSET_BASE = fromAttr;
+    if (fromAttr && !String(window.HATSU_ASSET_BASE || "").trim()) {
+      window.HATSU_ASSET_BASE = fromAttr;
+    }
   }
   absorbLoaderAssetBase();
 
