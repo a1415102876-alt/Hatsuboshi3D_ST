@@ -36,6 +36,10 @@ vercel.json            静态发布与云资源路由
 - Loading 图案与 Q 版小人随站部署，可以在大资源下载前显示。
 - Fish TTS 沿用已有 Cloudflare Worker 地址，用户仍可在设置中修改代理。此仓库不会把 Worker 自动部署到 Vercel，也不包含 API 密钥。
 
+Fish 日语发音词典保存在 `hatsu-produce-local/fish-tts.js` 的 `PRONUNCIATION_RULES`，首批为 13 位偶像的完整姓名、初星和毬。每次只发送台词命中的规则，字幕保持原文。`cloudflare/worker.js` 保存支持 `pronunciation_dictionary` 透传的代理实现，Vercel 构建不部署它；现有 Worker 可以通过 Cloudflare 的脚本 content 接口更新并保留静态资源和绑定。
+
+`tools/generate-fish-pronunciation.py` 可用 pyopenjtalk（Windows 可用 pyopenjtalk-plus）将指定假名转换为 Fish 的日语音素格式。它只在开发时使用，浏览器不需要 Python。重音是 OpenJTalk 的默认推断，需按试听调整。修改词条后更新客户端对应值，并递增 `PRONUNCIATION_VERSION`。
+
 ## 本地验证
 
 需要 Node.js 20 或更新版本，无运行依赖安装要求。
