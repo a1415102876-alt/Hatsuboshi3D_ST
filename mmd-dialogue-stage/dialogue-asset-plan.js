@@ -42,7 +42,7 @@ export function buildDialogueAssetPlan(compiled, preload, library, { random } = 
     let seed = 2166136261;
     for (const char of JSON.stringify(compiled.beats || [])) seed = Math.imul(seed ^ char.charCodeAt(0), 16777619) >>> 0;
     random ||= () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
-    const { config, manifest, map } = library, keys = new Set(), performances = new Map();
+    const { config, manifest, map } = library, keys = new Set(), performances = new Map(), fallbacks = [];
     const index = new Map(Object.entries(manifest.status.packs).map(([id, pack]) => [id, indexMotionFiles(pack.files)]));
     const cast = new Set(preload.cast), cuesById = structuredClone(preload.cuesById || {}), costumesById = structuredClone(preload.costumesById || {});
     const names = Object.fromEntries(Object.entries(SCENE_IDOLS).map(([name, id]) => [id, name]));
@@ -85,7 +85,14 @@ export function buildDialogueAssetPlan(compiled, preload, library, { random } = 
         for (const speaker of [...new Set([...(cuesById[id] || []), `${names[id]}(待机)`])]) {
             let cue = parsePortraitCue(speaker, 'dialogue', id);
             if (!cue || cue.mode === 'keep') cue = parsePortraitCue(`${names[id]}(待机)`, 'dialogue', id);
-            const item = selectPortraitPerformance(cue, eligible, id, { random }) || (id === 'nasr' ? idle : null);
+            let item = selectPortraitPerformance(cue, eligible, id, { random }) || (id === 'nasr' ? idle : null);
+            // The global cue vocabulary includes character-exclusive actions.
+            // Pin a real idle for an unavailable cue, so preparation and playback
+            // agree instead of retrying the same impossible selection forever.
+            if (!item && cue.mode !== 'additive') {
+                item = selectPortraitPerformance(parsePortraitCue(`${names[id]}(待机)`, 'dialogue', id), eligible, id, { random });
+                if (item) fallbacks.push({ idolId: id, speaker, requested: cue.gesture, used: 'idle' });
+            }
             if (!item) throw new Error(`无法为角色选择动作：${speaker}`);
             selected.set(speaker, item); motions(item);
         }
@@ -119,5 +126,5 @@ export function buildDialogueAssetPlan(compiled, preload, library, { random } = 
                 && effectPrefixes.some(prefix => key.startsWith('assets/facial-effects/' + prefix))) add(key);
         }
     }
-    return { keys: [...keys], cast: [...cast], cuesById, costumesById, performances };
+    return { keys: [...keys], cast: [...cast], cuesById, costumesById, performances, fallbacks };
 }
