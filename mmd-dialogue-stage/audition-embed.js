@@ -1,5 +1,17 @@
 import { DEFAULT_MOTION_VARIANTS } from './core.js?v=20261015-audition30-v1';
 
+export function auditionParentOrigin(href, referrer = '') {
+    const page = new URL(href);
+    const webOrigin = value => {
+        const url = new URL(value);
+        if (!/^https?:$/.test(url.protocol)) throw new Error('试镜宿主页面的来源无效');
+        return url.origin;
+    };
+    const explicit = page.searchParams.get('parentOrigin');
+    if (explicit !== null) return webOrigin(explicit);
+    try { return webOrigin(referrer); } catch { return webOrigin(page.origin); }
+}
+
 export function auditionEmbedCommand(data = {}) {
     const actorId = String(data.actorId || '');
     const variant = DEFAULT_MOTION_VARIANTS[actorId];

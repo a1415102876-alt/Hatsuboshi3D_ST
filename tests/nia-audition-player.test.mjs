@@ -10,13 +10,13 @@ const source = (await readFile(new URL('../hatsu-produce-local/nia-audition-play
 const flush = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 
-function harness() {
+function harness(locationOrigin = 'http://parent.test') {
     const messages = [], errors = [], ended = [], timers = new Set();
     const cover = deferred(), reveal = deferred();
     let listener, reveals = 0, disposed = false;
     const loading = { covered: cover.promise, reveal() { reveals++; return reveal.promise; }, fail: message => errors.push(message), dispose() { disposed = true; } };
     const host = { append(frame) { this.frame = frame; } };
-    const win = { addEventListener(_type, fn) { listener = fn; }, removeEventListener() { listener = null; } };
+    const win = { origin: 'http://parent.test', location: { origin: locationOrigin }, addEventListener(_type, fn) { listener = fn; }, removeEventListener() { listener = null; } };
     const context = vm.createContext({
         URL, window: win, beatActorId: () => 'hmsz',
         setTimeout(fn) { timers.add(fn); return fn; }, clearTimeout(fn) { timers.delete(fn); },
@@ -81,4 +81,22 @@ test('coverage finishing after disposal never unhides a discarded frame', async 
     assert.equal(h.host.frame.style.visibility, 'hidden');
     assert.equal(h.host.frame.removed, true);
     assert.equal(h.messages.some(message => message.type.endsWith(':start')), false);
+});
+
+test('inherited srcdoc origins are explicitly passed to the remote audition iframe', () => {
+    const h = harness('null');
+    assert.equal(new URL(h.host.frame.src).searchParams.get('parentOrigin'), 'http://parent.test');
+    h.player.dispose();
+});
+
+test('startup timeout identifies a missing handshake instead of blaming downloads', () => {
+    const h = harness(); [...h.timers][0]();
+    assert.match(h.errors[0], /播放器.*(?:启动|就绪)/);
+    h.player.dispose();
+});
+
+test('preparation timeout identifies the model and scene stage after downloads finish', () => {
+    const h = harness(); h.send('ready'); h.send('progress', {progress:{phase:'preparing'}});
+    [...h.timers][0](); assert.match(h.errors[0], /模型.*场景/);
+    h.player.dispose();
 });

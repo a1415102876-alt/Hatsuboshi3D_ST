@@ -27032,7 +27032,7 @@ ${outputContract("请写 900 字以内的完整校内傍晚场景，从抵达到
   }
 
   function niaAuditionPlayerModuleUrl() {
-    const path = "./nia-audition-player.js?v=20261017-audition-frame-v2";
+    const path = "./nia-audition-player.js?v=20261017-audition-origin-v3";
     return window.HATSU_RESOLVE_ASSET_URL ? window.HATSU_RESOLVE_ASSET_URL(path) : new URL(path, document.baseURI || window.location.href).href;
   }
 

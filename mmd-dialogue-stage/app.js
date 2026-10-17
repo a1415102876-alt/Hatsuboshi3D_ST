@@ -1,4 +1,4 @@
-import { installAuditionEmbed } from './audition-embed.js?v=20261017-browser-cache-v1';
+import { installAuditionEmbed, auditionParentOrigin } from './audition-embed.js?v=20261017-audition-origin-v3';
 import { loadResourceLibrary, ResourceSession } from './asset-runtime.js';
 import { buildAuditionAssetPlan } from './dialogue-asset-plan.js';
 let auditionResources = null;
@@ -442,7 +442,7 @@ setStatus('3D 运行库已就绪', 'ready');
 const libraryReady = initLibrary();
 if (new URLSearchParams(location.search).get('embed') === 'nia-audition') {
     document.documentElement.classList.add('audition-embedded');
-    const parentOrigin = new URL(document.referrer || location.href).origin;
+    const parentOrigin = auditionParentOrigin(location.href, document.referrer);
     const embedded = installAuditionEmbed({
         parentOrigin,
         async play(command, { isCurrent, autoplay, onProgress }) {

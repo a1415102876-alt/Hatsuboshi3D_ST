@@ -6,7 +6,11 @@ export class NiaAuditionSuccessPlayer {
         this.stop();
         const generation = this.generation;
         const baseUrl = this.options.baseUrl || import.meta.url;
-        const url = new URL('../mmd-dialogue-stage/?embed=nia-audition&v=20261015-audition-loading-v1', baseUrl);
+        const url = new URL('../mmd-dialogue-stage/?embed=nia-audition&v=20261017-audition-origin-v3', baseUrl);
+        // window.origin preserves the inherited origin of srcdoc and Blob hosts.
+        const parentOrigin = new URL(window.origin || window.location.origin).origin;
+        if (!/^https?:/.test(parentOrigin)) throw new Error('试镜宿主页面的来源无效');
+        url.searchParams.set('parentOrigin', parentOrigin);
         const actorId = beatActorId(idol);
         if (!actorId) throw new Error('担当偶像缺少3D模型配置');
         const loading = this.loading = this.options.loading || globalThis.HatsuNiaAuditionLoading.create(this.host, { idolId: actorId, assetBase: baseUrl, onRetry: callbacks.onRetry });
@@ -16,7 +20,7 @@ export class NiaAuditionSuccessPlayer {
         frame.style.visibility = 'hidden';
         this.host.append(frame);
         this.frame = frame; this.requestId = requestId; this.targetOrigin = url.origin;
-        let finished = false, requested = false, prepared = false, startSent = false, started = false;
+        let finished = false, requested = false, prepared = false, startSent = false, started = false, progressPhase = 'connecting';
         const current = () => generation === this.generation && !finished;
         const fail = message => {
             if (!current()) return;
@@ -29,23 +33,32 @@ export class NiaAuditionSuccessPlayer {
         };
         const resetTimeout = () => {
             clearTimeout(this.timeout);
-            this.timeout = setTimeout(() => fail('演出资源长时间没有下载进展，请重新载入。'), 90000);
+            this.timeout = setTimeout(() => {
+                const message = !requested ? '试镜播放器未能启动，请重新载入演出。'
+                    : prepared ? '试镜画面转场未能完成，请重新载入演出。'
+                    : progressPhase === 'preparing' ? '试镜模型、动作或场景准备超时，请重新载入演出。'
+                    : '演出资源长时间没有下载进展，请重新载入。';
+                fail(message);
+            }, 90000);
         };
         this.listener = event => {
             if (!current() || event.source !== frame.contentWindow || event.origin !== url.origin) return;
             const data = event.data || {};
             if (data.type === 'hatsu-nia-audition:ready' && !requested) {
                 requested = true;
+                resetTimeout();
                 frame.contentWindow.postMessage({ type: 'hatsu-nia-audition:play', requestId, actorId, round, deferStart: true }, url.origin);
                 return;
             }
             if (data.requestId !== requestId) return;
             if (data.type === 'hatsu-nia-audition:progress' && !prepared) {
+                progressPhase = data.progress?.phase || 'downloading';
                 loading.updateProgress?.(data.progress);
                 resetTimeout();
             }
             if (data.type === 'hatsu-nia-audition:prepared' && !prepared) {
                 prepared = true;
+                resetTimeout();
                 loading.covered.then(async covered => {
                     if (!covered || !current()) return;
                     frame.style.visibility = 'visible';
