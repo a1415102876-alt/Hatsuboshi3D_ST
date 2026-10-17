@@ -59,6 +59,11 @@ export class NiaAuditionSuccessPlayer {
             if (data.type === 'hatsu-nia-audition:ended' && started) { finished = true; clearTimeout(this.timeout); callbacks.onEnded?.(); }
         };
         window.addEventListener('message', this.listener);
+        // A hidden cross-origin iframe cannot deliver the animation frames needed
+        // for preparation. Let it render behind the fully closed Loading iris.
+        loading.covered.then(covered => {
+            if (covered && current()) frame.style.visibility = 'visible';
+        }).catch(error => fail(String(error?.message || error)));
         resetTimeout();
         frame.src = url.href;
     }
