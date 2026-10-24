@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light">
+  <title>N.I.A · 试镜 Loading 双向转场预览</title>
+  <style>
+    :root {
+      font-family: "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+      color: #28344b;
+      background: #edf0f5;
+      font-synthesis: none;
+      --audition-blue: #6da3fb;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100svh; }
+    button, select { font: inherit; }
+    button { cursor: pointer; }
+    button:focus-visible, select:focus-visible {
+      outline: 3px solid #447bd6;
+      outline-offset: 4px;
+    }
+    .preview {
+      min-height: 100svh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      padding: 19px 20px 15px;
+    }
+    .preview-header {
+      width: min(100%, 720px);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .preview-heading { display: flex; align-items: baseline; gap: 12px; }
+    .preview-heading small {
+      color: #6683ad;
+      font-size: 11px;
+      font-weight: 750;
+      letter-spacing: .13em;
+    }
+    h1 { margin: 0; font-size: 17px; font-weight: 650; }
+    .preview-status { margin: 0; color: #63738c; font-size: 12px; }
+    .preview-main { display: grid; place-items: center; width: 100%; flex: 1; }
+    .audition-stage {
+      position: relative;
+      isolation: isolate;
+      container-type: size;
+      height: min(calc(100svh - 144px), calc((100vw - 40px) * 16 / 9));
+      aspect-ratio: 9 / 16;
+      overflow: hidden;
+      border-radius: 8px;
+      background: var(--audition-blue);
+      box-shadow: 0 9px 38px #32415c17, 0 0 0 1px #ffffffa8;
+    }
+    .blue-cover { position: absolute; inset: 0; background: var(--audition-blue); }
+    .blue-cover::before, .blue-cover::after {
+      content: "";
+      position: absolute;
+      width: 37%;
+      aspect-ratio: 1;
+      background: #fff;
+      opacity: 0;
+      transition: opacity .22s ease-out;
+      pointer-events: none;
+    }
+    .blue-cover::before { top: 0; left: 0; clip-path: polygon(0 0, 100% 0, 0 100%); }
+    .blue-cover::after { right: 0; bottom: 0; clip-path: polygon(100% 0, 100% 100%, 0 100%); }
+    [data-phase="loading"] .blue-cover::before,
+    [data-phase="loading"] .blue-cover::after { opacity: .43; }
+    .loading-content {
+      position: absolute;
+      z-index: 1;
+      top: 40%;
+      left: 50%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: max-content;
+      max-width: 100%;
+      color: #fff;
+      opacity: 0;
+      visibility: hidden;
+      transform: translate(-50%, 5px);
+      transition: opacity .22s ease-out, transform .22s ease-out;
+    }
+    [data-phase="loading"] .loading-content {
+      visibility: visible;
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+    [data-phase="opening"] .loading-content {
+      visibility: visible;
+      opacity: 0;
+      transform: translate(-50%, -5px);
+    }
+    .audition-clock {
+      display: block;
+      width: clamp(40px, 17cqw, 80px);
+      overflow: visible;
+      flex-shrink: 0;
+    }
+    .clock-hand { transform-origin: 50px 50px; }
+    .clock-hand.minute { animation: clock-minute 2.4s linear infinite; }
+    .clock-hand.hour { animation: clock-hour 11s linear infinite; }
+    @keyframes clock-minute { from { transform: rotate(-18deg); } to { transform: rotate(342deg); } }
+    @keyframes clock-hour { from { transform: rotate(40deg); } to { transform: rotate(400deg); } }
+    .loading-label {
+      margin: clamp(15px, 5cqw, 25px) 0 0;
+      padding-left: .16em;
+      font-size: clamp(16px, 5.1cqw, 24px);
+      font-weight: 650;
+      line-height: 1.5;
+      letter-spacing: .16em;
+      white-space: nowrap;
+    }
+    .loading-idol {
+      position: relative;
+      width: clamp(74px, 42cqw, 182px);
+      aspect-ratio: 1;
+      margin-top: clamp(13px, 4cqw, 22px);
+    }
+    .loading-idol img {
+      position: absolute;
+      inset: 0;
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      pointer-events: none;
+      user-select: none;
+    }
+    .idol-open { animation: idol-open 3.6s steps(1, end) infinite; }
+    .idol-blink { opacity: 0; animation: idol-blink 3.6s steps(1, end) infinite; }
+    @keyframes idol-open { 0%, 91%, 96%, 100% { opacity: 1; } 92%, 95% { opacity: 0; } }
+    @keyframes idol-blink { 0%, 91%, 96%, 100% { opacity: 0; } 92%, 95% { opacity: 1; } }
+    .pre-scene {
+      position: absolute;
+      z-index: 2;
+      inset: 0;
+      overflow: hidden;
+      background: #d9dfe8;
+      clip-path: circle(150% at 50% 46%);
+    }
+    .pre-scene[hidden] { display: none; }
+    .next-scene {
+      position: absolute;
+      z-index: 3;
+      inset: 0;
+      overflow: hidden;
+      background: #d9dfe8;
+      clip-path: circle(0% at 50% 46%);
+    }
+    .next-scene[hidden] { display: none; }
+    [data-phase="complete"] .next-scene { clip-path: circle(150% at 50% 46%); }
+    .pre-scene-image { display: block; width: 100%; height: 100%; object-fit: cover; }
+    .scene-title {
+      position: absolute;
+      top: 3.5%;
+      left: 4%;
+      padding: 9px 19px 9px 13px;
+      border-radius: 0 24px 24px 0;
+      color: #fff;
+      background: #24385866;
+      font-size: clamp(10px, 3cqw, 13px);
+      line-height: 1.6;
+      letter-spacing: .04em;
+    }
+    .scene-title strong { display: block; font-size: .85em; letter-spacing: .15em; }
+    .scene-dialogue {
+      position: absolute;
+      right: 4%;
+      bottom: 5.5%;
+      left: 4%;
+      padding: 18px 17px;
+      border: 1px solid #ffffffdf;
+      border-radius: 17px;
+      background: #ffffffe8;
+      font-size: clamp(10px, 3.15cqw, 14px);
+      line-height: 1.85;
+      color: #303e52;
+    }
+    .scene-speaker {
+      position: absolute;
+      bottom: 100%;
+      left: 2px;
+      margin: 0 0 -1px;
+      padding: 2px 16px;
+      border-radius: 16px 16px 0 0;
+      color: #2e3f5b;
+      background: #c9d8f3;
+      font-size: .95em;
+      font-weight: 700;
+    }
+    .scene-dialogue p { margin: 0; }
+    .preview-controls {
+      width: min(100%, 720px);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 9px;
+      flex-wrap: wrap;
+    }
+    .idol-select-label {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding-left: 4px;
+      color: #647189;
+      font-size: 12px;
+    }
+    select, .control {
+      height: 40px;
+      border: 1px solid #cbd4e2;
+      border-radius: 7px;
+      color: #344764;
+      background: #fff;
+      font-size: 13px;
+      transition: background .18s, border-color .18s;
+    }
+    select { width: 143px; padding: 0 10px; cursor: pointer; }
+    .control { display: flex; align-items: center; justify-content: center; gap: 7px; padding: 0 13px; }
+    .control svg { width: 16px; height: 16px; flex-shrink: 0; }
+    .control:hover, select:hover { border-color: #8ca6cd; background: #f8fbff; }
+    .control:disabled { opacity: .5; cursor: wait; }
+    .fullscreen-button { width: 40px; padding: 0; }
+    .audition-stage:fullscreen { width: 100vw; height: 100dvh; aspect-ratio: auto; border-radius: 0; }
+    .audition-stage:fullscreen .loading-content { top: 40%; }
+    .audition-stage:fullscreen .audition-clock { width: clamp(48px, 17vmin, 90px); }
+    .audition-stage:fullscreen .loading-label { font-size: clamp(18px, 5.1vmin, 26px); margin-top: 22px; }
+    .audition-stage:fullscreen .loading-idol { width: clamp(105px, 42vmin, 190px); margin-top: 17px; }
+    @media (max-width: 480px) {
+      .preview { padding: 13px 12px max(13px, env(safe-area-inset-bottom)); gap: 12px; }
+      .preview-header { padding: 0 2px; }
+      h1 { font-size: 15px; }
+      .preview-heading { gap: 8px; }
+      .preview-heading small { font-size: 10px; }
+      .preview-status { font-size: 11px; }
+      .audition-stage { height: min(calc(100svh - 124px), calc((100vw - 24px) * 16 / 9)); border-radius: 5px; }
+      .idol-select-label > span { display: none; }
+      .preview-controls { display: grid; grid-template-columns: minmax(108px, 1fr) auto auto 36px; gap: 6px; }
+      .idol-select-label { min-width: 0; padding-left: 0; }
+      select { width: 100%; }
+      .control { padding: 0 10px; }
+      .control:not(.fullscreen-button) svg { display: none; }
+      .fullscreen-button { width: 36px; padding: 0; }
+    }
+    @media (max-height: 520px) {
+      .preview { padding: 10px; gap: 8px; }
+      .audition-stage { height: calc(100svh - 104px); }
+      .loading-content { top: 31%; }
+      .loading-label { margin-top: 8px; font-size: 12px; }
+      .loading-idol { width: 64px; margin-top: 5px; }
+      .audition-clock { width: 33px; }
+      .audition-stage:fullscreen .loading-content { top: 29%; }
+      .audition-stage:fullscreen .loading-idol { width: 100px; }
+      .audition-stage:fullscreen .loading-label { margin-top: 12px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition: none !important; }
+      .idol-open { opacity: 1; }
+      .idol-blink { opacity: 0; }
+    }
+  </style>
+</head>
+<body>
+  <main class="preview">
+    <header class="preview-header">
+      <div class="preview-heading"><small>N.I.A</small><h1>试镜转场预览</h1></div>
+      <p id="previewStatus" class="preview-status" role="status">准备预览</p>
+    </header>
+
+    <div class="preview-main">
+      <section id="auditionStage" class="audition-stage" data-phase="scene" data-idol="hmsz" aria-label="秦谷美铃的试镜等待画面预览">
+        <div class="blue-cover" aria-hidden="true"></div>
+        <div class="loading-content" role="status" aria-label="试镜进行中">
+          <svg class="audition-clock" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" aria-hidden="true">
+            <circle cx="50" cy="50" r="41"></circle>
+            <path class="clock-hand minute" d="M50 50V20"></path>
+            <path class="clock-hand hour" d="M50 50V30"></path>
+          </svg>
+          <p class="loading-label">试镜进行中</p>
+          <div class="loading-idol">
+            <img id="idolOpen" class="idol-open" src="../../mmd-dialogue-stage/ui/loading-sd/img_sd_hmsz_cmmn-00.png" alt="秦谷美铃的Q版小人" draggable="false">
+            <img id="idolBlink" class="idol-blink" src="../../mmd-dialogue-stage/ui/loading-sd/img_sd_hmsz_cmmn-01.png" alt="" aria-hidden="true" draggable="false">
+          </div>
+        </div>
+        <div id="preScene" class="pre-scene" aria-hidden="true">
+          <img id="preSceneImage" class="pre-scene-image" src="../assets/idols/hataya-misuzu.png" alt="" draggable="false">
+          <div class="scene-title"><strong>NEXT IDOL AUDITION</strong>试镜前</div>
+          <div class="scene-dialogue"><span class="scene-speaker">制作人</span><p>准备好了的话，就去吧。<br>我会在这里等你。</p></div>
+        </div>
+        <div id="nextScene" class="next-scene" hidden aria-hidden="true">
+          <img id="nextSceneImage" class="pre-scene-image" src="../../mmd-dialogue-stage/backgrounds_2d/env_2d_adv_other-audition-nia-00-noon.png" alt="N.I.A 试镜会场" draggable="false">
+          <div class="scene-title"><strong>NEXT IDOL AUDITION</strong>下一幕 · 试镜会场</div>
+          <div class="scene-dialogue"><span id="nextSceneSpeaker" class="scene-speaker">秦谷美铃</span><p>制作人，试镜结束了。<br>接下来，一起确认结果吧。</p></div>
+        </div>
+      </section>
+    </div>
+
+    <footer class="preview-controls" aria-label="预览控制">
+      <label class="idol-select-label"><span>育成偶像</span><select id="idolSelect" aria-label="选择育成偶像"></select></label>
+      <button id="replayButton" class="control" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10a8 8 0 1 1 1 7M4 4v6h6"></path></svg>
+        重播全程
+      </button>
+      <button id="nextButton" class="control" type="button" disabled aria-label="提前结束等待，以圆形展开下一幕" title="提前结束等待，预览展开转场">下一幕</button>
+      <button id="fullscreenButton" class="control fullscreen-button" type="button" title="全屏预览" aria-label="全屏预览">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"></path></svg>
+      </button>
+    </footer>
+  </main>
+
+  <script>
+    (() => {
+      "use strict";
+      const idols = [
+        ["hmsz", "秦谷美铃", "hataya-misuzu"], ["hski", "花海咲季", "hanami-saki"],
+        ["ttmr", "月村手毬", "tsukimura-temari"], ["fktn", "藤田琴音", "fujita-kotone"],
+        ["hume", "花海佑芽", "hanami-ume"], ["shro", "筱泽广", "shinosawa-hiro"],
+        ["amao", "有村麻央", "arimura-mao"], ["hrnm", "姬崎莉波", "himesaki-rinami"],
+        ["kcna", "仓本千奈", "kuramoto-china"], ["ssmk", "紫云清夏", "shiun-sumika"],
+        ["kllj", "葛城莉莉娅", "katsuragi-lilja"], ["jsna", "十王星南", "juo-sena"],
+        ["atbm", "雨夜燕", "amaya-tsubame"]
+      ];
+      const stage = document.getElementById("auditionStage");
+      const scene = document.getElementById("preScene");
+      const nextScene = document.getElementById("nextScene");
+      const select = document.getElementById("idolSelect");
+      const status = document.getElementById("previewStatus");
+      const replayButton = document.getElementById("replayButton");
+      const nextButton = document.getElementById("nextButton");
+      const open = document.getElementById("idolOpen");
+      const blink = document.getElementById("idolBlink");
+      const sceneImage = document.getElementById("preSceneImage");
+      const nextSceneImage = document.getElementById("nextSceneImage");
+      const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
+      let generation = 0;
+      let play = 0;
+      let iris = null;
+      let exitTimer = null;
+
+      for (const [id, name] of idols) select.add(new Option(name, id));
+      const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+      const prepareImage = src => new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve(src);
+        image.onerror = () => reject(new Error("图片加载失败：" + src));
+        image.src = src;
+      });
+
+      async function replay() {
+        const token = ++play;
+        clearTimeout(exitTimer);
+        iris?.cancel();
+        nextScene.hidden = true;
+        nextScene.setAttribute("aria-hidden", "true");
+        nextButton.disabled = true;
+        scene.hidden = false;
+        stage.dataset.phase = "scene";
+        status.textContent = "转场前画面";
+        if (!reducedMotion.matches) {
+          await delay(620);
+          if (token !== play) return;
+          stage.dataset.phase = "closing";
+          status.textContent = "圆形收拢";
+          iris = scene.animate([
+            { clipPath: "circle(150% at 50% 46%)" },
+            { clipPath: "circle(0% at 50% 46%)" }
+          ], { duration: 860, easing: "cubic-bezier(.42, 0, .58, 1)", fill: "forwards" });
+          try { await iris.finished; } catch { return; }
+          if (token !== play) return;
+        }
+        scene.hidden = true;
+        stage.dataset.phase = "loading";
+        status.textContent = "等待循环";
+        nextButton.disabled = false;
+        exitTimer = setTimeout(revealNextScene, 4200);
+      }
+
+      async function revealNextScene() {
+        if (stage.dataset.phase !== "loading") return;
+        const token = ++play;
+        clearTimeout(exitTimer);
+        iris?.cancel();
+        nextButton.disabled = true;
+        stage.dataset.phase = "opening";
+        status.textContent = "圆形展开";
+        nextScene.hidden = false;
+        if (!reducedMotion.matches) {
+          await delay(180);
+          if (token !== play) return;
+          iris = nextScene.animate([
+            { clipPath: "circle(0% at 50% 46%)" },
+            { clipPath: "circle(150% at 50% 46%)" }
+          ], { duration: 860, easing: "cubic-bezier(.42, 0, .58, 1)", fill: "forwards" });
+          try { await iris.finished; } catch { return; }
+          if (token !== play) return;
+        }
+        nextScene.setAttribute("aria-hidden", "false");
+        stage.dataset.phase = "complete";
+        status.textContent = "下一幕";
+      }
+
+      async function changeIdol(id) {
+        const token = ++generation;
+        ++play;
+        clearTimeout(exitTimer);
+        iris?.cancel();
+        nextButton.disabled = true;
+        const idol = idols.find(item => item[0] === id) || idols[0];
+        select.value = idol[0];
+        replayButton.disabled = true;
+        status.textContent = "准备预览";
+        const images = [
+          "../../mmd-dialogue-stage/ui/loading-sd/img_sd_" + idol[0] + "_cmmn-00.png",
+          "../../mmd-dialogue-stage/ui/loading-sd/img_sd_" + idol[0] + "_cmmn-01.png",
+          "../assets/idols/" + idol[2] + ".png"
+        ];
+        try {
+          await Promise.all([...images, nextSceneImage.src].map(prepareImage));
+          if (token !== generation) return;
+          [open.src, blink.src, sceneImage.src] = images;
+          open.alt = idol[1] + "的Q版小人";
+          document.getElementById("nextSceneSpeaker").textContent = idol[1];
+          stage.dataset.idol = idol[0];
+          stage.setAttribute("aria-label", idol[1] + "的试镜等待画面预览");
+          await replay();
+        } catch (error) {
+          if (token !== generation) return;
+          status.textContent = "素材加载失败，请重试";
+          console.error(error);
+        } finally {
+          if (token === generation) replayButton.disabled = false;
+        }
+      }
+
+      select.addEventListener("change", () => changeIdol(select.value));
+      replayButton.addEventListener("click", replay);
+      nextButton.addEventListener("click", revealNextScene);
+      document.getElementById("fullscreenButton").addEventListener("click", async () => {
+        try {
+          if (document.fullscreenElement) await document.exitFullscreen();
+          else if (stage.requestFullscreen) await stage.requestFullscreen();
+          else status.textContent = "当前浏览器不支持全屏";
+        } catch { status.textContent = "暂时无法进入全屏"; }
+      });
+      window.addEventListener("pagehide", () => { ++generation; ++play; clearTimeout(exitTimer); iris?.cancel(); });
+      const initialIdol = new URLSearchParams(location.search).get("idol");
+      changeIdol(initialIdol || "hmsz");
+    })();
+  </script>
+</body>
+</html>

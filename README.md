@@ -1,67 +1,80 @@
-# 初星育成 3D · SillyTavern 前端
+# 初星育成
 
-这是可由 GitHub 接入 Vercel 的独立部署仓库。主前端与 3D 播放器保持同级：
+学园偶像大师同人育成前端原型。
 
-```text
-hatsu-produce-local/    育成 UI、NIA、Beat 业务及酒馆桥接
-mmd-dialogue-stage/     Three.js、Beat 播放器、口型、物理及资源索引
-tools/                 同步、静态构建与本地预览
-tests/                 部署与远程嵌入路径检查
-vercel.json            静态发布与云资源路由
+## 运行方式
+
+直接用浏览器打开 `index.html` 即可运行。
+
+## 酒馆助手脚本入口
+
+新增了可被 `import` 的悬浮球脚本入口：
+
+- `dist/hatsu-launcher/index.js`
+- `dist/hatsu-launcher/keep-latest-floor.js`（仅保留最新楼层）
+
+示例（按你的仓库地址替换）：
+
+```js
+import 'https://testingcf.jsdelivr.net/gh/<your-user>/<your-repo>@<tag-or-branch>/dist/hatsu-launcher/index.js'
 ```
 
-## Vercel 导入
+仅保留最新楼层（伪 0 层）示例：
 
-导入 `a1415102876-alt/Hatsuboshi3D_ST`，使用仓库根目录作为 Root Directory。
-
-- Framework Preset：Other。
-- Build Command：`npm run build`。
-- Output Directory：`dist`。
-- 不要把 Root Directory 改成任意一个前端子目录。
-
-这些设置已经写入 `vercel.json`。根网址自动进入 `/hatsu-produce-local/st.html`；`/st.html` 也提供同一个酒馆入口，独立页面为 `/hatsu-produce-local/index.html`，Stage 为 `/mmd-dialogue-stage/`。
-
-生产构建使用 Vercel 的 `VERCEL_PROJECT_PRODUCTION_URL` 写入公开项目域名；预览构建使用 `VERCEL_URL`。如需固定自定义域名，可设置公开环境变量 `HATSU_PUBLIC_ORIGIN=https://你的域名`。这个变量只包含网址。酒馆加载脚本显式填写的 `window.HATSU_ASSET_BASE` 优先于入口内的默认地址，避免被需要登录的临时部署地址覆盖。
-
-## 酒馆中加载
-
-优先使用现有的酒馆加载方式，地址换成本次 Vercel 部署的 `/st.html`。新站构建后的入口内已填写绝对资源基址，3D 模块和 Three.js 都从同一部署加载。
-
-静态站本身不运行 SillyTavern 后端。角色卡、世界书和已有聊天存档仍由用户自己的酒馆管理；独立模式沿用原前端的 API 配置流程。
-
-## 云资源与 TTS
-
-- 3D 模型、贴图、动作、场景与 NPC 差分：沿用 `library.json` 指定的 gakuen R2 桶及浏览器按需缓存。
-- 常规前端图集与媒体：沿用另一个既有 R2 桶。Vercel 路由为独立页面提供同源读取入口；云端缺少的本地图片随站保留。
-- Loading 图案与 Q 版小人随站部署，可以在大资源下载前显示。
-- Fish TTS 沿用已有 Cloudflare Worker 地址，用户仍可在设置中修改代理。此仓库不会把 Worker 自动部署到 Vercel，也不包含 API 密钥。
-
-Fish 日语发音词典保存在 `hatsu-produce-local/fish-tts.js` 的 `PRONUNCIATION_RULES`，首批为 13 位偶像的完整姓名、初星和毬。每次只发送台词命中的规则，字幕保持原文。`cloudflare/worker.js` 保存支持 `pronunciation_dictionary` 透传的代理实现，Vercel 构建不部署它；现有 Worker 可以通过 Cloudflare 的脚本 content 接口更新并保留静态资源和绑定。
-
-`tools/generate-fish-pronunciation.py` 可用 pyopenjtalk（Windows 可用 pyopenjtalk-plus）将指定假名转换为 Fish 的日语音素格式。它只在开发时使用，浏览器不需要 Python。重音是 OpenJTalk 的默认推断，需按试听调整。修改词条后更新客户端对应值，并递增 `PRONUNCIATION_VERSION`。
-
-## 本地验证
-
-需要 Node.js 20 或更新版本，无运行依赖安装要求。
-
-```sh
-npm run build
-npm test
-npm run preview
+```js
+window.HatsuKeepLatestConfig = {
+  hardRemove: false,
+  debounceMs: 120,
+  reloadOnChatChanged: true
+};
+import 'https://testingcf.jsdelivr.net/gh/<your-user>/<your-repo>@<tag-or-branch>/dist/hatsu-launcher/keep-latest-floor.js'
 ```
 
-预览地址为 `http://127.0.0.1:8767/`，可通过 `PORT` 环境变量修改。本地预览实现与 `vercel.json` 一致的静态优先和 R2 回源规则；云资源仍需要联网。
+可选全局配置（在 `import` 前设置）：
 
-## 从原工程更新
-
-在本仓库运行：
-
-```sh
-node tools/import-source.mjs "G:/SillyTavern/SillyTavern/public"
-npm run build
-npm test
+```js
+window.HatsuLauncherConfig = {
+  frontendUrl: '/hatsu-produce-local/index.html',
+  launcherText: '初',
+  launcherSize: 44
+};
 ```
 
-同步工具只读取原工程，复制运行代码和本地界面资源，并检查常规图集在 R2 的可用性。模型大文件、解包目录、工程、凭据、日志、测试备份与源目录的 `.git` 不会被复制。`docs/source-snapshot.json` 记录本次同步文件数及媒体缺项。
+## 当前功能
 
-不要手工提交生成的 `dist/`、`.vercel/` 或 `.env`。此仓库保留源代码中的第三方许可声明；原游戏素材的权利归各自权利人。
+- 担当偶像选择
+- 18 天 First Live 育成日程
+- 每日 3 次普通行动与 1 次额外行动
+- 上课、训练、休息、外出、交流
+- SP 训练候选与随机互动事件
+- 前端数值结算
+- P 手账提示词、育成日志与结算明细
+- 行动后全屏事件描述页
+- 内部通知与模态框
+
+## Persistent message-floor launcher
+
+When a TavernHelper regex renders every AI reply as a frontend page, load the compact launcher instead of loading `st.html` directly:
+
+```html
+<body>
+  <script>
+    $('body').load('http://127.0.0.1:8000/hatsu-produce-local/launcher.html');
+  </script>
+</body>
+```
+
+The launcher card creates or reveals one game iframe attached directly to the SillyTavern host document. Every rendered message controls the same iframe.
+
+The draggable host-level floating toggle is hide-only. It does not cancel an in-flight generation, release a Harness lease, or reload the game iframe. Tap it again to resume the same in-memory page state.
+
+A shujuku floor refresh can rebuild chat messages without removing the host-level game iframe. A SillyTavern full refresh still reloads the runtime and may invoke normal Harness Recovery for an interrupted turn.
+
+Manual checks:
+
+1. Confirm each rendered AI floor shows only the compact launcher card.
+2. Start the game and confirm the shell and floating toggle are direct children of the host document body.
+3. Drag the floating toggle and confirm the game remains open.
+4. Tap the floating toggle and confirm the shell is hidden while `#hatsu-persistent-game-frame` remains in the DOM with the same `src`.
+5. Tap again and confirm the same game state resumes.
+6. Trigger a shujuku table refresh and confirm the game does not reload solely because floors were rebuilt.

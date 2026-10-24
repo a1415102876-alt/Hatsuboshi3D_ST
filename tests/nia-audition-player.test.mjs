@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { readFile } from 'node:fs/promises';
 
-const source = (await readFile(new URL('../hatsu-produce-local/nia-audition-player.js', import.meta.url), 'utf8'))
+const source = (await readFile(new URL('../nia-audition-player.js', import.meta.url), 'utf8'))
     .replace(/^import .*;\r?\n/m, '')
     .replace('export class', 'class')
     .replaceAll('import.meta.url', "'http://parent.test/hatsu-produce-local/nia-audition-player.js'");
