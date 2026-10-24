@@ -1,7 +1,53 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { decalUv, layoutCameraView, linearColor, pickLayoutActor, reflectionProbeBox, resolveVolumeStack, sceneGrade, sceneLayoutOptions, scenePost, sceneSphereFog, sceneLightData, sceneRootTransform, selectReflectionProbe, shCoefficients, validateSceneSidecar } from './gakumas-scene-core.js?v=20261007-generic-layouts-v1';
+import { applyRootTransform, decalUv, layoutCameraView, linearColor, pickLayoutActor, reflectionProbeBox, resolveVolumeStack, sceneGrade, sceneLayoutOptions, scenePost, sceneSphereFog, sceneLightData, sceneRootTransform, selectReflectionProbe, shCoefficients, validateSceneSidecar } from './gakumas-scene-core.js?v=20261007-generic-layouts-v1';
+import { activityForScene, checkAnchorPlan, nearestSafePoint, pathIsClear, validateActivity } from './scene-activity.js?v=20261023-activity-zones-v1';
 
+const ACTIVITY_MANIFEST_URL = new URL('./scene-activity-manifest.json', import.meta.url).href;
+
+const BEAT_CAMERA_FOCALS = Object.freeze({ medium: 30, close: 55, side: 35, 'two-shot': 35, emphasis: 85 });
+
+function cameraFovForFocalLength(focalLength, fallback = 36) {
+    const focal = Number(focalLength);
+    return Number.isFinite(focal) && focal > 0 ? 2 * Math.atan(24 / (2 * focal)) * 180 / Math.PI : fallback;
+}
+
+function zoomCameraView(view, zoom = 1) {
+    const factor = Number(zoom);
+    if (!view || !Number.isFinite(factor) || factor <= 0 || factor === 1) return view;
+    const amount = Math.min(1.4, Math.max(0.55, factor));
+    const position = view.position.map((value, index) => view.target[index] - (view.target[index] - value) * amount);
+    return { ...view, position };
+}
+
+function rotateVectorY(vector, angle) {
+    const c = Math.cos(angle), s = Math.sin(angle);
+    return [vector[0] * c + vector[2] * s, vector[1], -vector[0] * s + vector[2] * c];
+}
+
+function lerpArray(from, to, amount) {
+    return from.map((value, index) => value + (to[index] - value) * amount);
+}
+
+function cameraEase(value, ease = 'out-sine') {
+    const t = Math.min(1, Math.max(0, Number(value) || 0));
+    if (ease === 'linear') return t;
+    if (ease === 'out-quad') return 1 - (1 - t) * (1 - t);
+    if (ease === 'in-out-sine') return -(Math.cos(Math.PI * t) - 1) / 2;
+    return Math.sin((t * Math.PI) / 2);
+}
+
+function interpolateCameraView(from, to, progress) {
+    const amount = Math.min(1, Math.max(0, Number(progress) || 0));
+    return {
+        position: lerpArray(from.position, to.position, amount),
+        target: lerpArray(from.target, to.target, amount),
+        up: lerpArray(from.up || [0, 1, 0], to.up || [0, 1, 0], amount),
+        fov: Number(from.fov) + (Number(to.fov) - Number(from.fov)) * amount,
+        near: from.near == null ? to.near : to.near == null ? from.near : Number(from.near) + (Number(to.near) - Number(from.near)) * amount,
+        far: from.far == null ? to.far : to.far == null ? from.far : Number(from.far) + (Number(to.far) - Number(from.far)) * amount,
+    };
+}
 const GRADE_GLSL = `
 uniform float gkExposure;
 uniform float gkContrast;
@@ -503,6 +549,11 @@ export class GakumasSceneStage {
             gkFogDensity: { value: 0 },
         };
         this.probes = [];
+        this.activityManifest = null;
+        this.activityManifestPromise = null;
+        this.activity = null;
+        this.activityError = null;
+        this.beatCamera = null;
         this.loadGeneration = 0;
         this.ready = false;
     }
@@ -515,6 +566,49 @@ export class GakumasSceneStage {
         return sceneLayoutOptions(this.sidecar);
     }
 
+    async loadActivityManifest() {
+        if (this.activityManifest) return this.activityManifest;
+        if (this.activityManifestPromise) return this.activityManifestPromise;
+        this.activityManifestPromise = (async () => {
+            const response = this.resources ? await this.resources.fetch(ACTIVITY_MANIFEST_URL) : await fetch(ACTIVITY_MANIFEST_URL, { cache: 'no-store' });
+            if (!response.ok) throw new Error('活动区域清单读取失败（' + response.status + '）');
+            const manifest = await response.json();
+            if (manifest?.format !== 'gakumas-scene-activity' || !manifest?.scenes || !manifest?.families) throw new Error('活动区域清单格式无效');
+            this.activityManifest = manifest;
+            return manifest;
+        })().catch(error => {
+            this.activityError = error;
+            console.warn('[GakumasSceneStage] activity manifest unavailable', error);
+            return null;
+        });
+        return this.activityManifestPromise;
+    }
+
+    activityForScene() {
+        return this.activity;
+    }
+
+    resolveActivityAnchor(anchorId) {
+        const anchor = this.activity?.anchors?.find(item => item.id === anchorId);
+        if (!anchor) return null;
+        const position = this.safeActivityPoint(anchor.position, Math.min(0.2, this.activity?.clearance || 0.35));
+        return { ...anchor, position, adjusted: position.some((value, index) => Math.abs(value - anchor.position[index]) > 1e-3) };
+    }
+
+    checkActivityPlan(plan = {}) {
+        const result = checkAnchorPlan(this.activity, plan);
+        if (!result.ok) return result;
+        const anchor = this.resolveActivityAnchor(result.anchor.id);
+        return anchor ? { ...result, anchor } : { ok: false, reason: '锚点无法落在安全区域' };
+    }
+
+    canTraverseActivity(from, to, radius = this.activity?.clearance || 0.35) {
+        return Boolean(this.activity && pathIsClear(this.activity, from, to, radius));
+    }
+
+    safeActivityPoint(point, radius = this.activity?.clearance || 0.35) {
+        return this.activity ? nearestSafePoint(this.activity, point, radius) : point;
+    }
     async load(url, { layout, isCurrent: ownerCurrent = () => true } = {}) {
         this.unload();
         const generation = ++this.loadGeneration;
@@ -525,6 +619,16 @@ export class GakumasSceneStage {
         if (!isCurrent()) return null;
         const errors = validateSceneSidecar(sidecar);
         if (errors.length) throw new Error(errors.join('；'));
+        const activityManifest = await this.loadActivityManifest();
+        if (!isCurrent()) return null;
+        this.activity = activityForScene(activityManifest, sidecar.scene);
+        if (this.activity) {
+            const activityErrors = validateActivity(this.activity);
+            if (activityErrors.length) {
+                console.warn('[GakumasSceneStage] invalid activity data', sidecar.scene, activityErrors);
+                this.activity = null;
+            }
+        }
         const textureLoader = new THREE.TextureLoader(this.resources?.manager(THREE));
         const lightmaps = await Promise.all(sidecar.lightmapSettings.lightmaps.map(async entry => {
             if (!entry.colorFile) return null;
@@ -572,6 +676,8 @@ export class GakumasSceneStage {
         }
         stats.lights = this.shared.gkLightCount.value;
         stats.probes = probes.filter(Boolean).length;
+        stats.activityFamily = this.activity?.family || null;
+        stats.activityStatus = this.activity?.status || null;
         if (skyTexture) this.buildSky(skyTexture, skyEntry, sidecar.environment.sky);
         const box = new THREE.Box3().setFromObject(gltf.scene);
         this.farDistance = box.isEmpty() ? 0 : box.getSize(new THREE.Vector3()).length() * this.scale * 1.2;
@@ -782,21 +888,114 @@ export class GakumasSceneStage {
         this.scene.add(mesh);
     }
 
-    applyBeatLayout(shot = 'medium', position = 'center') {
+    applyBeatLayout(shot = 'medium', position = 'center', cameraOptions = {}) {
+        const requestedLayout = String(cameraOptions?.layout || '').trim();
+        if (requestedLayout && this.sidecar?.layouts?.[requestedLayout]) {
+            this.beatCamera = {
+                layoutId: requestedLayout,
+                zoom: Number(cameraOptions.zoom) > 0 ? Number(cameraOptions.zoom) : 1,
+            };
+            return this.applyLayout(requestedLayout);
+        }
         const key = ['medium', 'close', 'reaction'].includes(shot) ? shot : 'medium';
-        const base = this.sidecar?.layouts?.[`generic-${key}`];
+        const base = this.sidecar?.layouts?.['generic-' + key];
         if (!base) return null;
         const source = base.actors[0];
         const offset = ({ left: -0.8, center: 0, right: 0.8 })[position] || 0;
         const shift = [source.forward[2] * offset, 0, -source.forward[0] * offset];
+        const rawPosition = source.position.map((v, i) => v + shift[i]);
+        const safePosition = this.safeActivityPoint(rawPosition, Math.min(0.2, this.activity?.clearance || 0.35));
+        const safeShift = safePosition.map((v, i) => v - source.position[i]);
         this.sidecar.layouts['beat-focus'] = {
             ...base,
-            actors: [{ ...source, position: source.position.map((v, i) => v + shift[i]) }],
-            camera: { ...base.camera, position: base.camera.position.map((v, i) => v + shift[i]) },
+            actors: [{ ...source, position: safePosition }],
+            camera: { ...base.camera, position: base.camera.position.map((v, i) => v + safeShift[i]) },
         };
+        const hasCameraOptions = Boolean(cameraOptions?.preset || cameraOptions?.motion);
+        // The ADV dance room's generated generic point is behind foreground
+        // foliage. Its activity manifest contains a safer front-facing point;
+        // use that point even for legacy Beat lines without camera attributes.
+        const forceActivityCamera = /^env_3d_adv_danceroom-00-00(?:-|$)/.test(String(this.activity?.sceneId || ''));
+        const useActivityCamera = hasCameraOptions || forceActivityCamera;
+        this.beatCamera = useActivityCamera ? {
+            preset: String(cameraOptions.preset || key).trim().toLowerCase(),
+            motion: String(cameraOptions.motion || '').trim().toLowerCase(),
+            duration: Number(cameraOptions.duration) > 0 ? Math.min(20, Number(cameraOptions.duration)) : 0,
+            ease: String(cameraOptions.ease || 'out-sine').trim().toLowerCase(),
+            // Keep the camera's source-space offset paired with the actor's
+            // safe station. Activity camera zones are authored around the
+            // generic layout, so they follow this same displacement.
+            stationShift: [...safeShift],
+            stationPosition: [...safePosition],
+        } : null;
         return this.applyLayout('beat-focus');
     }
 
+    activityCameraView(preset, fallback) {
+        if (!this.activity || !this.transform) return fallback;
+        const zoneIds = {
+            medium: ['generic-medium'],
+            close: ['generic-close'],
+            side: ['generic-reaction'],
+            reaction: ['generic-reaction'],
+            'two-shot': ['conversation-duo', 'generic-medium'],
+            emphasis: ['generic-close'],
+        }[preset] || ['generic-medium'];
+        const zone = (this.activity.cameraZones || []).find(item => zoneIds.includes(item.id));
+        if (!zone?.center) return fallback;
+        const anchor = this.resolveActivityAnchor(zone.target || 'center') || this.resolveActivityAnchor('center');
+        if (!anchor) return fallback;
+        const stationShift = this.beatCamera?.stationShift || [0, 0, 0];
+        // Shift the authored camera zone with the selected station. Keep Y
+        // unchanged: station selection is a horizontal composition change.
+        const shiftedCenter = zone.center.map((value, index) =>
+            value + (index === 1 ? 0 : (Number(stationShift[index]) || 0))
+        );
+        const focusedActor = this.sidecar?.layouts?.['beat-focus']?.actors?.[0];
+        const isTwoShot = preset === 'two-shot';
+        const rawTarget = isTwoShot
+            ? anchor.position.map((value, index) =>
+                value + (index === 1 ? 0 : (Number(stationShift[index]) || 0))
+            )
+            : (focusedActor?.position || anchor.position);
+        const position = applyRootTransform(this.transform, shiftedCenter);
+        const target = applyRootTransform(this.transform, rawTarget);
+        // Activity anchors describe floor-level map points. Preserve the
+        // generic layout's body-height framing so the new map camera does not
+        // suddenly aim at the actor's feet when the station changes.
+        const focusedWorld = applyRootTransform(
+            this.transform,
+            focusedActor?.position || anchor.position
+        );
+        const targetHeightOffset = (fallback.target?.[1] ?? focusedWorld[1]) - focusedWorld[1];
+        target[1] += targetHeightOffset;
+        const focal = BEAT_CAMERA_FOCALS[preset] || BEAT_CAMERA_FOCALS.medium;
+        return {
+            ...fallback,
+            position,
+            target,
+            fov: cameraFovForFocalLength(focal, fallback.fov),
+        };
+    }
+
+    cameraMotionView(view, motion) {
+        const next = { ...view, position: [...view.position], target: [...view.target] };
+        if (motion === 'lower' || motion === 'raise') {
+            const delta = motion === 'lower' ? -0.25 : 0.25;
+            next.position[1] += delta;
+            next.target[1] += delta * 0.35;
+        } else if (motion === 'turn') {
+            const vector = next.target.map((value, index) => value - next.position[index]);
+            const turned = rotateVectorY(vector, 25 * Math.PI / 180);
+            next.target = next.position.map((value, index) => value + turned[index]);
+        } else if (motion === 'push-in' || motion === 'pull-out') {
+            const vector = next.target.map((value, index) => value - next.position[index]);
+            const factor = motion === 'push-in' ? 0.25 : -0.2;
+            next.position = next.position.map((value, index) => value + vector[index] * factor);
+            next.fov = Number(next.fov) * (motion === 'push-in' ? 0.88 : 1.12);
+        }
+        return next;
+    }
     applyLayout(layoutId) {
         const layout = this.sidecar?.layouts?.[layoutId];
         if (!layout) return null;
@@ -814,7 +1013,7 @@ export class GakumasSceneStage {
         this.post = scenePost(stack, activeComponents);
         this.applyGrade(this.grade);
         this.transform = transform;
-        return { layout, transform, view: layoutCameraView(layout, transform, this.scale * 0.5) };
+        return { layout, transform, view: this.cameraView(layoutId) };
     }
 
     applyLights(lights) {
@@ -852,9 +1051,16 @@ export class GakumasSceneStage {
         }
     }
 
-    cameraView(layoutId = this.layoutId, modelFrame = null) {
+    cameraView(layoutId = this.layoutId, modelFrame = null, progress = 1) {
         const layout = this.sidecar?.layouts?.[layoutId];
-        return layout && this.transform ? layoutCameraView(layout, this.transform, this.scale * 0.5, modelFrame) : null;
+        if (!layout || !this.transform) return null;
+        const base = layoutCameraView(layout, this.transform, this.scale * 0.5, modelFrame);
+        if (!base || !this.beatCamera) return base;
+        if (this.beatCamera.layoutId === layoutId) return zoomCameraView(base, this.beatCamera.zoom);
+        const preset = this.activityCameraView(this.beatCamera.preset, base);
+        const target = this.cameraMotionView(preset, this.beatCamera.motion);
+        const amount = this.beatCamera.motion ? cameraEase(progress, this.beatCamera.ease) : 1;
+        return interpolateCameraView(base, target, amount);
     }
 
     // Scene geometry reaches ~190 m; keep it inside the far plane after
@@ -896,6 +1102,8 @@ export class GakumasSceneStage {
         this.gltf = null;
         this.sky = null;
         this.sidecar = null;
+        this.activity = null;
+        this.beatCamera = null;
         this.grade = null;
         this.post = null;
         this.layoutId = '';

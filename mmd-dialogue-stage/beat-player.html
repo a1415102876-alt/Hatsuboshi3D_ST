@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#eef3f5">
   <title>3D Beat 剧情演出原型</title>
-  <link rel="stylesheet" href="./beat-player.css?v=20261014-npc-portraits-v3">
+  <link rel="stylesheet" href="./beat-player.css?v=20261024-idle-chat-v2">
   <script type="importmap">
     {
       "imports": {
@@ -23,36 +23,82 @@
         <h1>3D Beat 剧情演出</h1>
         <p class="subtitle">用一段简单的 Beat 台词，把角色、动作、视线和镜头组合成可播放的场景。</p>
       </div>
-      <a class="back-link" href="./index.html">返回动作舞台</a>
+      <nav class="beat-header-links">
+        <a class="back-link" href="./free-chat.html">独立闲聊</a>
+        <a class="back-link" href="./index.html">返回动作舞台</a>
+      </nav>
     </header>
 
     <section class="beat-layout">
       <aside class="beat-editor" aria-label="Beat 编辑器">
-        <div class="panel-heading">
-          <div>
-            <span class="panel-kicker">SCRIPT</span>
-            <h2>Beat 台词</h2>
+        <div class="mode-tabs" role="tablist" aria-label="演出模式">
+          <button id="beatModeBtn" class="mode-tab is-active" type="button" role="tab" aria-selected="true">剧情 Beat</button>
+          <button id="chatModeBtn" class="mode-tab" type="button" role="tab" aria-selected="false">闲聊模式</button>
+        </div>
+        <section id="beatEditorPanel" class="mode-panel" aria-label="Beat 编辑器">
+          <div class="panel-heading">
+            <div>
+              <span class="panel-kicker">SCRIPT</span>
+              <h2>Beat 台词</h2>
+            </div>
+            <span id="beatProgress" class="progress-pill">—</span>
           </div>
-          <span id="beatProgress" class="progress-pill">—</span>
-        </div>
-          <p class="format-hint">每个 beat 只写一段台词。十三位偶像可用 costume="Solo1" 换第一套个人曲演出服，costume="Default" 恢复各自默认造型，省略时沿用该角色上一句的服装。选项事件用 choice 包住四个 option。</p>
-        <textarea id="beatScript" spellcheck="false" aria-label="Beat 台词输入"></textarea>
-        <div class="editor-actions">
-          <button id="sampleBeatBtn" class="button secondary" type="button">载入示例</button>
-          <button id="choiceBeatBtn" class="button secondary" type="button">载入选项示例</button>
-          <button id="sceneBeatBtn" class="button secondary" type="button">载入3D示例</button>
-          <button id="loadBeatBtn" class="button primary" type="button">解析 Beat</button>
-        </div>
-        <div class="diagnostics-card">
-          <div class="diagnostics-title">协议检查</div>
-          <ul id="beatDiagnostics" class="diagnostics-list" data-level="ok">协议检查通过</ul>
-        </div>
-        <div class="protocol-note">
-          <strong>可用字段</strong>
-          <code>speaker</code>　<code>cue</code>　<code>face</code>　<code>overlay</code>　<code>effect</code>　<code>look</code>　<code>position</code>　<code>background</code>　<code>shot</code>　<code>wait</code>
-          <span>动作使用语义词；独立动作可配 face，点头或摇头叠加使用 overlay；面部特殊效果使用 effect。选项事件在台词结束后给出四个 option。speaker 可使用 14 名偶像、producer 或 narrator。</span>
-          <span>background 支持 2D 短地点标签与 3d-adv-vocalroom-00-00-noon 这样的 3D 标签。3D 景别使用 medium、close、reaction。</span>
-        </div>
+            <p class="format-hint">每个 beat 只写一段台词。十三位偶像可用 costume="Solo1" 换第一套个人曲演出服，costume="Default" 恢复各自默认造型，省略时沿用该角色上一句的服装。选项事件用 choice 包住四个 option。</p>
+          <textarea id="beatScript" spellcheck="false" aria-label="Beat 台词输入"></textarea>
+          <div class="editor-actions">
+            <button id="sampleBeatBtn" class="button secondary" type="button">载入示例</button>
+            <button id="choiceBeatBtn" class="button secondary" type="button">载入选项示例</button>
+            <button id="sceneBeatBtn" class="button secondary" type="button">载入3D示例</button>
+            <button id="loadBeatBtn" class="button primary" type="button">解析 Beat</button>
+          </div>
+          <div class="diagnostics-card">
+            <div class="diagnostics-title">协议检查</div>
+            <ul id="beatDiagnostics" class="diagnostics-list" data-level="ok">协议检查通过</ul>
+          </div>
+          <div class="protocol-note">
+            <strong>可用字段</strong>
+            <code>speaker</code>　<code>cue</code>　<code>face</code>　<code>overlay</code>　<code>effect</code>　<code>look</code>　<code>position</code>　<code>background</code>　<code>shot</code>　<code>wait</code>
+            <span>动作使用语义词；独立动作可配 face，点头或摇头叠加使用 overlay；面部特殊效果使用 effect。选项事件在台词结束后给出四个 option。speaker 可使用 14 名偶像、producer 或 narrator。</span>
+            <span>background 支持 2D 短地点标签与 3d-adv-vocalroom-00-00-noon 这样的 3D 标签。3D 景别使用 medium、close、reaction。</span>
+          </div>
+        </section>
+        <section id="chatEditorPanel" class="mode-panel chat-panel" aria-label="偶像闲聊" hidden>
+          <div class="panel-heading">
+            <div>
+              <span class="panel-kicker">IDOL CHAT</span>
+              <h2>和偶像闲聊</h2>
+            </div>
+            <span class="progress-pill">固定中景</span>
+          </div>
+          <label class="chat-field-label" for="chatIdolSelect">选择偶像</label>
+          <select id="chatIdolSelect" class="chat-select" aria-label="选择闲聊偶像">
+            <option value="kotone">藤田琴音</option>
+            <option value="hski">花海咲季</option>
+            <option value="ttmr">月村手毬</option>
+            <option value="hume">花海佑芽</option>
+            <option value="mao">有村麻央</option>
+            <option value="kcna">仓本千奈</option>
+            <option value="kllj">葛城莉莉娅</option>
+            <option value="ssmk">紫云清夏</option>
+            <option value="shro">筱泽广</option>
+            <option value="hrnm">姬崎莉波</option>
+            <option value="jsna">十王星南</option>
+            <option value="hmsz">秦谷美铃</option>
+            <option value="atbm">雨夜燕</option>
+          </select>
+          <p id="chatStatus" class="chat-status" role="status">进入场景后会先播放制作察觉动作，再回到默认待机。</p>
+          <div id="chatLog" class="chat-log" aria-live="polite">
+            <div class="chat-log-empty">选择偶像后，输入想说的话。</div>
+          </div>
+          <div class="chat-composer">
+            <label class="chat-field-label" for="chatInput">发送消息</label>
+            <textarea id="chatInput" rows="3" maxlength="1200" placeholder="例如：今天的练习顺利吗？" aria-label="闲聊输入"></textarea>
+            <div class="chat-composer-actions">
+              <span class="chat-hint">回复会使用动作、表情和 TTS 播放</span>
+              <button id="sendChatBtn" class="button primary" type="button">发送</button>
+            </div>
+          </div>
+        </section>
       </aside>
 
       <section class="beat-player-panel" aria-label="3D 剧情播放器">
@@ -85,7 +131,7 @@
       </section>
     </section>
   </main>
-  <script src="../hatsu-produce-local/fish-tts.js?v=20261013-china-voice-v2"></script>
-  <script type="module" src="./beat-player.js?v=20261017-browser-cache-v1"></script>
+  <script src="../hatsu-produce-local/fish-tts.js?v=20261024-voice-map-v2"></script>
+  <script type="module" src="./beat-player.js?v=20261024-idle-chat-v2"></script>
 </body>
 </html>

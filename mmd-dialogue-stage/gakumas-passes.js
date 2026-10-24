@@ -28,14 +28,15 @@ export function shouldReceiveCharacterShadow(role) {
     return ['face', 'eye', 'hair', 'body', 'clothing', 'bodyAccessory'].includes(role);
 }
 
-export function characterShadowFrustum(radius) {
+export function characterShadowFrustum(radius, mapSize = CHARACTER_SHADOW_MAP_SIZE) {
     const extent = Math.max(Number(radius) || 0, 0.5);
     const distance = extent + 1;
     const near = 0.05;
     const far = distance + extent + 0.5;
-    const texel = (extent * 2) / CHARACTER_SHADOW_MAP_SIZE;
+    const size = Math.max(256, Math.round(Number(mapSize) || CHARACTER_SHADOW_MAP_SIZE));
+    const texel = (extent * 2) / size;
     return {
-        mapSize: CHARACTER_SHADOW_MAP_SIZE,
+        mapSize: size,
         distance,
         extent,
         near,
@@ -100,11 +101,11 @@ export function characterShadowLightOffset(viewDirection, target, distance) {
     };
 }
 
-export function placeCharacterShadowLight(light, camera, fit) {
+export function placeCharacterShadowLight(light, camera, fit, mapSize = CHARACTER_SHADOW_MAP_SIZE) {
     const target = fit?.center;
     if (!light?.shadow?.camera || !camera?.position || !target) return null;
     if (typeof camera.updateMatrixWorld === 'function') camera.updateMatrixWorld();
-    const frustum = characterShadowFrustum(fit.radius);
+    const frustum = characterShadowFrustum(fit.radius, mapSize);
     const basis = characterShadowViewBasis(camera.matrixWorld?.elements);
     const placement = characterShadowLightOffset(
         basis.forward,

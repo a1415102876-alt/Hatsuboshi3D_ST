@@ -1,35 +1,15 @@
 {
-  "generatedAt": "2026-10-16T18:31:13.839Z",
-  "files": 247,
-  "bytes": 53685685,
+  "generatedAt": "2026-10-24T16:25:39.871Z",
+  "files": 261,
+  "bytes": 58751704,
   "mediaChecked": 331,
   "mediaMissing": [
-    {
-      "path": "assets/hcg/Hiro/ref-character.png",
-      "status": 404
-    },
-    {
-      "path": "assets/hcg/Hiro/gakumas_00563_.png",
-      "status": 404
-    },
     {
       "path": "assets/hcg/Hiro/gakumas_00559_.png",
       "status": 404
     },
     {
-      "path": "assets/hcg/Hiro/gakumas_00568_.png",
-      "status": 404
-    },
-    {
-      "path": "assets/hcg/Hiro/gakumas_00571_.png",
-      "status": 404
-    },
-    {
-      "path": "assets/hcg/Hiro/gakumas_00576_.png",
-      "status": 404
-    },
-    {
-      "path": "assets/hcg/Hiro/gakumas_00584_.png",
+      "path": "assets/hcg/Hiro/ref-character.png",
       "status": 404
     },
     {
@@ -37,7 +17,27 @@
       "status": 404
     },
     {
-      "path": "assets/hcg/Hiro/gakumas_00587_.png",
+      "path": "assets/hcg/Hiro/gakumas_00571_.png",
+      "status": 404
+    },
+    {
+      "path": "assets/hcg/Hiro/gakumas_00568_.png",
+      "status": 404
+    },
+    {
+      "path": "assets/hcg/Hiro/gakumas_00584_.png",
+      "status": 404
+    },
+    {
+      "path": "assets/hcg/Hiro/gakumas_00563_.png",
+      "status": 404
+    },
+    {
+      "path": "assets/hcg/Hiro/gakumas_00576_.png",
+      "status": 404
+    },
+    {
+      "path": "assets/hcg/Hiro/gakumas_00612_.png",
       "status": 404
     },
     {
@@ -45,11 +45,19 @@
       "status": 404
     },
     {
+      "path": "assets/hcg/Hiro/gakumas_00587_.png",
+      "status": 404
+    },
+    {
       "path": "assets/hcg/Hiro/gakumas_00608_.png",
       "status": 404
     },
     {
-      "path": "assets/hcg/Hiro/gakumas_00612_.png",
+      "path": "assets/novel-standees/Ume_Standees_Altered/1af286f8-e544-4938-ab44-14d3644bb48d.png",
+      "status": 404
+    },
+    {
+      "path": "assets/novel-standees/Ume_Standees_Altered/d6b4e595-4a4c-4bf8-8590-63de8d20af99.png",
       "status": 404
     },
     {
@@ -59,31 +67,43 @@
     {
       "path": "assets/novel-standees/Ume_Standees_Altered/e5184708-4603-499b-9c8c-f5bed828e5d0.png",
       "status": 404
-    },
-    {
-      "path": "assets/novel-standees/Ume_Standees_Altered/d6b4e595-4a4c-4bf8-8590-63de8d20af99.png",
-      "status": 404
-    },
-    {
-      "path": "assets/novel-standees/Ume_Standees_Altered/7a948476-4a13-43f8-9daa-59e846c04f26.png",
-      "status": 404
-    },
-    {
-      "path": "assets/novel-standees/Ume_Standees_Altered/1af286f8-e544-4938-ab44-14d3644bb48d.png",
-      "status": 404
     }
   ],
   "mediaUnverified": [
     {
-      "path": "assets/scenes/Shopping_Mall.png",
+      "path": "assets/hcg/saki/full_nelson_v01.png",
       "status": 0
     },
     {
-      "path": "assets/scenes/SpecialEducation_Detailed.png",
+      "path": "assets/novel-standees/Kotone_Standees_Altered/tearful_protest.png",
       "status": 0
     },
     {
-      "path": "assets/scenes/Shopping_Mall_Entrance.png",
+      "path": "assets/novel-standees/Ume_Standees_Altered/7a948476-4a13-43f8-9daa-59e846c04f26.png",
+      "status": 0
+    },
+    {
+      "path": "assets/novel-standees/arimura-mao.png",
+      "status": 0
+    },
+    {
+      "path": "assets/novel-standees/Hiro_Standees_Altered/exhausted.png",
+      "status": 0
+    },
+    {
+      "path": "assets/novel-standees/Hiro_Standees_Altered/puzzled_inquiry.png",
+      "status": 0
+    },
+    {
+      "path": "assets/scenes/Aquarium.png",
+      "status": 0
+    },
+    {
+      "path": "assets/scenes/NIA_Stage_Backstage.png",
+      "status": 0
+    },
+    {
+      "path": "assets/scenes/Student Store.png",
       "status": 0
     },
     {
@@ -91,7 +111,7 @@
       "status": 0
     },
     {
-      "path": "assets/scenes/Misuzu_Room.png",
+      "path": "assets/scenes/NIA_Finale.png",
       "status": 0
     }
   ]

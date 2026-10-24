@@ -1,16 +1,17 @@
-import { createSceneDirector } from './live-portrait.js?v=20261017-browser-cache-v1';
+import { createSceneDirector } from './live-portrait.js?v=20261024-crowd-budget-v1';
 import { sceneIdolId } from './scene-protocol.js?v=20261006-star-eyes-v1';
-import { buildStageSlides, parseBeatScript, resolveBeatCue } from './beat-protocol.js?v=20261014-npc-portraits-v1';
-import { BeatScenePool } from './beat-scene-pool.js?v=20261017-browser-cache-v1';
+import { buildStageSlides, parseBeatScript, resolveBeatCue } from './beat-protocol.js?v=20261024-tts-speakers-v1';
+import { BeatScenePool } from './beat-scene-pool.js?v=20261024-danceroom-camera-v2';
 import { isBeatScene } from './beat-background-assets.js?v=20261008-background-aliases-v1';
 import { beatSpeakerStyle } from './beat-speaker-theme.js?v=20261007-speaker-colors-v1';
-import { BEAT_CUES, BEAT_EFFECTS, BEAT_FACES, BEAT_OVERLAYS, BEAT_POSITIONS, BEAT_SHOTS, BEAT_SPEAKER_NAMES, backgroundPanPosition, beatActorId, beatBackgroundChanged, buildBackgroundPlan, estimateBeatHold, getShotPreset, resolveBeatShot, stagePositionOffset } from './beat-player-core.js?v=20261014-npc-portraits-v1';
+import { BEAT_ACTOR_NAMES, BEAT_CUES, BEAT_EFFECTS, BEAT_FACES, BEAT_OVERLAYS, BEAT_POSITIONS, BEAT_SHOTS, BEAT_SPEAKER_NAMES, backgroundPanPosition, beatActorId, beatBackgroundChanged, buildBackgroundPlan, estimateBeatHold, getShotPreset, resolveBeatShot, stagePositionOffset } from './beat-player-core.js?v=20261023-camera-v1';
 import { BEAT_BACKGROUND_NAMES, backgroundAssetUrl, preloadBackgrounds } from './beat-backgrounds.js?v=20261017-browser-cache-v1';
 import { TtsLipSyncAnalyzer } from './tts-lip-sync.js?v=20261013-audio-talk-v3';
 import { loadResourceLibrary, ResourceSession } from './asset-runtime.js';
-import { buildDialogueAssetPlan } from './dialogue-asset-plan.js';
+import { buildDialogueAssetPlan } from './dialogue-asset-plan.js?v=20261024-idle-chat-v2';
 import { createResourceLoading } from './resource-loading.js';
 import { ResourceBarrier } from './resource-barrier.js';
+import { buildChatPrompt, createChatBridge, normalizeChatReply } from './beat-chat.js?v=20261024-idle-chat-v2';
 
 // Resolve against this module. A document-relative ./backgrounds_2d path
 // points at the produce page when the player is embedded there.
@@ -46,14 +47,18 @@ const CHOICE_SCRIPT = `<beat speaker="kotone" cue="talk" look="camera" position=
 <option>在门口等麻央一起走。</option>
 </choice>`;
 
-const SCENE_SCRIPT = `<beat speaker="kotone" cue="talk" look="camera" position="center" background="声乐练习室-午" shot="medium">制作人，今天先从发声练习开始吗？</beat>
-<beat speaker="producer">先按自己的节奏试一遍。</beat>
-<beat speaker="mao" cue="talk" look="camera" position="right" shot="medium">我也准备好了。</beat>
-<beat speaker="kotone" cue="happy" look="camera" position="center" shot="close">好！那我先来。</beat>
-<beat speaker="rinami" cue="greet" look="camera" position="left" shot="reaction">琴音妹妹，加油。</beat>`;
+const SCENE_SCRIPT = `<beat speaker="kotone" cue="talk" look="camera" position="center" background="声乐练习室-午" shot="medium" camera="medium">制作人，先从中景开始。</beat>
+<beat speaker="producer" camera="side" camera-motion="turn" camera-duration="0.6">镜头转向我这边，确认一下站位。</beat>
+<beat speaker="mao" cue="talk" look="camera" position="right" shot="medium" camera="two-shot">我也准备好了，保持双人构图。</beat>
+<beat speaker="kotone" cue="happy" look="camera" position="center" shot="close" camera="close" camera-motion="push-in" camera-duration="0.45">好！那我先来，镜头再靠近一点。</beat>
+<beat speaker="rinami" cue="greet" look="camera" position="left" shot="reaction" camera="emphasis" camera-motion="lower" camera-duration="1.2" camera-ease="out-sine">琴音妹妹，加油。</beat>`;
 
 const NAME_MAP = BEAT_SPEAKER_NAMES;
 const ACTOR_OPTIONS = [...new Set([...Object.keys(NAME_MAP), ...Object.values(NAME_MAP)])];
+const CHAT_BACKGROUND = '家·教室（午）';
+const CHAT_IDOL_OPTIONS = Object.entries(BEAT_ACTOR_NAMES)
+    .filter(([id]) => !['nasr', 'asari'].includes(id))
+    .map(([id, name]) => ({ id, name }));
 
 function getElement(root, id) {
     return root.querySelector(`#${id}`) || document.getElementById(id);
@@ -70,6 +75,16 @@ export class BeatPlayerApp {
             sample: getElement(root, 'sampleBeatBtn'),
             choiceSample: getElement(root, 'choiceBeatBtn'),
             sceneSample: getElement(root, 'sceneBeatBtn'),
+            beatMode: getElement(root, 'beatModeBtn'),
+            chatMode: getElement(root, 'chatModeBtn'),
+            beatEditorPanel: getElement(root, 'beatEditorPanel'),
+            chatEditorPanel: getElement(root, 'chatEditorPanel'),
+            chatComposer: getElement(root, 'beatChatComposer'),
+            chatIdol: getElement(root, 'chatIdolSelect'),
+            chatLog: getElement(root, 'chatLog'),
+            chatInput: getElement(root, 'chatInput'),
+            sendChat: getElement(root, 'sendChatBtn'),
+            chatStatus: getElement(root, 'chatStatus'),
             dialogueCard: getElement(root, 'beatDialogueCard'),
             portrait: getElement(root, 'beatSpeakerPortrait'),
             choices: getElement(root, 'beatChoices'),
@@ -106,6 +121,9 @@ export class BeatPlayerApp {
         this.defaultBackground = String(options.defaultBackground || '').trim();
         this.resolveSpeakerTheme = options.resolveSpeakerTheme;
         this.fixedPresentation = options.fixedPresentation || null;
+        this.baseFixedPresentation = this.fixedPresentation;
+        this.fixedCameraOptions = options.fixedCameraOptions || null;
+        this.baseFixedCameraOptions = this.fixedCameraOptions;
         this.defaultCostumes = options.defaultCostumes || {};
         this.backgroundImages = new Map();
         this.backgroundPlan = [];
@@ -114,6 +132,17 @@ export class BeatPlayerApp {
         this.ttsSession = '';
         this.ttsLipSync = options.ttsLipSync || new TtsLipSyncAnalyzer();
         this.ttsLipSyncSpeaker = '';
+        this.chatBridge = options.chatBridge || createChatBridge();
+        this.chatState = {
+            active: false,
+            idolKey: this.elements.chatIdol?.value || CHAT_IDOL_OPTIONS[0]?.id || 'kotone',
+            pending: false,
+            introPending: false,
+            saveScope: '',
+            requestId: '',
+            previousScript: '',
+            previousAuto: false,
+        };
         this.elements.portrait?.addEventListener('error', () => { this.elements.portrait.hidden = true; });
         if (options.bindEvents !== false) this.bindEvents();
         if (options.loadSample !== false && this.elements.script) {
@@ -123,6 +152,18 @@ export class BeatPlayerApp {
     }
 
     bindEvents() {
+        this.elements.beatMode?.addEventListener('click', () => this.exitChatMode());
+        this.elements.chatMode?.addEventListener('click', () => this.enterChatMode(this.elements.chatIdol?.value));
+        this.elements.chatIdol?.addEventListener('change', () => {
+            if (this.chatState.active) this.enterChatMode(this.elements.chatIdol.value);
+        });
+        this.elements.sendChat?.addEventListener('click', () => this.sendChatMessage(this.elements.chatInput?.value || ''));
+        this.elements.chatInput?.addEventListener('keydown', event => {
+            if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+                event.preventDefault();
+                this.sendChatMessage(this.elements.chatInput.value);
+            }
+        });
         this.elements.load?.addEventListener('click', () => this.compile());
         this.elements.sample?.addEventListener('click', () => {
             this.elements.script.value = SAMPLE_SCRIPT;
@@ -213,6 +254,227 @@ export class BeatPlayerApp {
         // rejection when the user is still looking at the script editor.
         this.preloadPromise.catch(() => {});
         this.prepareBeatVoices();
+        if (this.chatState.active) {
+            this.preloadPromise
+                .then(ready => this.finishChatCompile(generation, ready))
+                .catch(error => this.setChatStatus(`资源加载失败：${error.message || error}`, 'error'));
+        }
+    }
+
+    setModeUi(chatActive) {
+        if (this.elements.chatComposer) this.elements.chatComposer.hidden = !chatActive;
+        if (this.elements.beatEditorPanel) this.elements.beatEditorPanel.hidden = chatActive;
+        if (this.elements.chatEditorPanel) this.elements.chatEditorPanel.hidden = !chatActive;
+        if (this.elements.beatMode) {
+            this.elements.beatMode.classList.toggle('is-active', !chatActive);
+            this.elements.beatMode.setAttribute('aria-selected', String(!chatActive));
+        }
+        if (this.elements.chatMode) {
+            this.elements.chatMode.classList.toggle('is-active', chatActive);
+            this.elements.chatMode.setAttribute('aria-selected', String(chatActive));
+        }
+    }
+
+    setChatStatus(message, level = '') {
+        if (!this.elements.chatStatus) return;
+        this.elements.chatStatus.textContent = String(message || '');
+        if (level) this.elements.chatStatus.dataset.level = level;
+        else delete this.elements.chatStatus.dataset.level;
+    }
+
+    setChatControlsDisabled(disabled) {
+        if (this.elements.chatIdol) this.elements.chatIdol.disabled = Boolean(disabled);
+        if (this.elements.chatInput) this.elements.chatInput.disabled = Boolean(disabled);
+        if (this.elements.sendChat) this.elements.sendChat.disabled = Boolean(disabled);
+    }
+
+    clearChatLog() {
+        if (!this.elements.chatLog) return;
+        this.elements.chatLog.replaceChildren();
+    }
+
+    appendChatLine(role, text, label = '') {
+        const log = this.elements.chatLog;
+        if (!log) return;
+        const empty = log.querySelector('.chat-log-empty');
+        empty?.remove();
+        const line = document.createElement('div');
+        line.className = 'chat-line';
+        line.dataset.role = role;
+        if (label) {
+            const title = document.createElement('span');
+            title.className = 'chat-line-label';
+            title.textContent = label;
+            line.append(title);
+        }
+        const body = document.createElement('span');
+        body.textContent = String(text || '');
+        line.append(body);
+        log.append(line);
+        log.scrollTop = log.scrollHeight;
+    }
+
+    selectedChatIdol() {
+        const key = String(this.chatState.idolKey || this.elements.chatIdol?.value || 'kotone');
+        return CHAT_IDOL_OPTIONS.find(option => option.id === key) || CHAT_IDOL_OPTIONS[0];
+    }
+
+    enterChatMode(idolKey = this.elements.chatIdol?.value || 'kotone') {
+        const requested = String(idolKey || '').trim();
+        const option = CHAT_IDOL_OPTIONS.find(item => item.id === requested || item.name === requested) || CHAT_IDOL_OPTIONS[0];
+        if (!option) return false;
+        if (!this.chatState.active) {
+            this.chatState.previousScript = this.elements.script?.value || '';
+            this.chatState.previousAuto = Boolean(this.elements.auto?.checked);
+        }
+        this.stop();
+        this.chatState.active = true;
+        this.chatState.idolKey = option.id;
+        this.chatState.pending = false;
+        this.chatState.requestId = '';
+        this.chatState.introPending = true;
+        this.chatState.saveScope = '';
+        this.fixedPresentation = { shot: 'medium', focus: beatActorId(option.id) };
+        this.fixedCameraOptions = { layout: 'home-home', zoom: 0.84 };
+        if (this.elements.chatIdol) this.elements.chatIdol.value = option.id;
+        this.elements.auto.checked = true;
+        this.setModeUi(true);
+        this.clearChatLog();
+        this.appendChatLine('system', `已进入${option.name}的闲聊场景。`, '系统');
+        this.setChatStatus('正在加载家·教室，并准备制作察觉动作…', 'busy');
+        this.elements.script.value = `<beat id="chat-intro" speaker="${option.id}" cue="idle" face="neutral" look="camera" position="center" background="${CHAT_BACKGROUND}" shot="medium" wait="none">……</beat>`;
+        this.compile();
+        this.chatBridge.requestContext?.()
+            .then(context => {
+                if (this.chatState.active) this.chatState.saveScope = String(context?.saveScope || '');
+            })
+            .catch(() => {
+                if (this.chatState.active) this.setChatStatus('已进入场景；当前对话档案读取较慢，仍可稍后发送。', '');
+            });
+        return true;
+    }
+
+    exitChatMode() {
+        if (!this.chatState.active) {
+            this.setModeUi(false);
+            return false;
+        }
+        this.stop();
+        this.chatState.active = false;
+        this.chatState.pending = false;
+        this.chatState.introPending = false;
+        this.chatState.requestId = '';
+        this.fixedPresentation = this.baseFixedPresentation;
+        this.fixedCameraOptions = this.baseFixedCameraOptions;
+        if (this.elements.auto) this.elements.auto.checked = this.chatState.previousAuto;
+        this.setChatControlsDisabled(false);
+        this.setModeUi(false);
+        if (this.elements.script) this.elements.script.value = this.chatState.previousScript || SAMPLE_SCRIPT;
+        this.compile();
+        return true;
+    }
+
+    async finishChatCompile(generation, ready) {
+        if (!this.chatState.active || generation !== this.resourceGeneration) return false;
+        if (!ready) {
+            this.setChatStatus('场景资源未完整就绪，请点击资源缓存中的重试。', 'error');
+            return false;
+        }
+        const first = await this.goTo(0, { autoplay: false });
+        if (!first || !this.chatState.active || generation !== this.resourceGeneration) return false;
+        if (this.chatState.introPending) {
+            this.chatState.introPending = false;
+            await this.playChatIntroAction();
+            if (this.chatState.active) this.setChatStatus('已进入待机，可以开始闲聊。');
+            return true;
+        }
+        this.state.playing = true;
+        this.updatePlayButton();
+        await this.goTo(0, { autoplay: true });
+        if (this.chatState.active && !this.state.playing && !this.chatState.pending) this.setChatStatus('回复播放完毕，可以继续输入。');
+        return true;
+    }
+
+    async playChatIntroAction() {
+        const option = this.selectedChatIdol();
+        const idolId = beatActorId(option?.id || '');
+        const entry = idolId ? this.director.entries.get(idolId) : null;
+        if (!entry?.player || !entry.present) return false;
+        const generation = this.state.generation;
+        const isCurrent = () => this.chatState.active && generation === this.state.generation && entry.present;
+        try {
+            const played = await entry.player.playStageTransition('kiduku', { isCurrent, onStart: () => {
+                entry.present = true;
+                entry.canvas.style.visibility = 'visible';
+                entry.canvas.style.opacity = '1';
+                entry.player.resume();
+            } });
+            if (!isCurrent()) return false;
+            await entry.player.ensureFamily('idle', { play: true });
+            entry.player.resume();
+            return played;
+        } catch (error) {
+            console.warn('[BeatPlayer] chat intro action unavailable', error);
+            await entry.player.ensureFamily('idle', { play: true }).catch(() => {});
+            return false;
+        }
+    }
+
+    async sendChatMessage(value) {
+        const text = String(value || '').trim();
+        if (!this.chatState.active || !text || this.chatState.pending || this.state.playing) return false;
+        const option = this.selectedChatIdol();
+        let prompt;
+        try {
+            prompt = buildChatPrompt({ idolName: option.name, userText: text, background: CHAT_BACKGROUND });
+        } catch (error) {
+            this.setChatStatus(error.message || String(error), 'error');
+            return false;
+        }
+        this.appendChatLine('user', text, '你');
+        if (this.elements.chatInput) this.elements.chatInput.value = '';
+        this.chatState.pending = true;
+        this.chatState.requestId = `beat-chat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        this.setChatControlsDisabled(true);
+        this.setChatStatus('偶像正在思考…', 'busy');
+        try {
+            if (!this.chatState.saveScope) {
+                const context = await this.chatBridge.requestContext();
+                this.chatState.saveScope = String(context?.saveScope || '');
+            }
+            const payload = await this.chatBridge.send(prompt, {
+                saveScope: this.chatState.saveScope || `beat-chat-${Date.now()}`,
+                requestId: this.chatState.requestId,
+            });
+            return this.handleChatReply(payload);
+        } catch (error) {
+            this.chatState.pending = false;
+            this.chatState.requestId = '';
+            this.setChatControlsDisabled(false);
+            this.setChatStatus(error.message || '闲聊生成失败，请重试。', 'error');
+            this.appendChatLine('system', error.message || '闲聊生成失败，请重试。', '系统');
+            return false;
+        }
+    }
+
+    handleChatReply(payload) {
+        if (!this.chatState.active || String(payload?.requestId || '') !== String(this.chatState.requestId || '')) return false;
+        const result = normalizeChatReply(payload?.text || payload?.rawText || '', { background: CHAT_BACKGROUND });
+        this.chatState.pending = false;
+        this.chatState.requestId = '';
+        this.setChatControlsDisabled(false);
+        if (!result.ok) {
+            this.setChatStatus(result.error || '闲聊回复无法播放。', 'error');
+            this.appendChatLine('system', result.error || '闲聊回复无法播放。', '系统');
+            return false;
+        }
+        const replyText = result.beats.map(beat => `${NAME_MAP[beat.speaker] || beat.speaker}：${beat.text}`).join('\n');
+        this.appendChatLine('assistant', replyText, this.selectedChatIdol()?.name || '偶像');
+        this.setChatStatus('正在准备动作和语音…', 'busy');
+        this.chatState.introPending = false;
+        this.elements.script.value = result.script;
+        this.compile();
+        return true;
     }
 
     async togglePlay() {
@@ -583,7 +845,20 @@ export class BeatPlayerApp {
             entry.player.setPresentationActive?.(visible);
         }
         const scenePlayer = focusedEntry?.present && focusedEntry.player.ready ? focusedEntry.player : null;
-        return this.scenePool.present(beat?.background || '', scenePlayer, presentation.shot, focusedEntry?.position || 'center') || !scene3d;
+        const cameraOptions = {
+            ...(this.fixedCameraOptions || {}),
+            ...((beat?.camera || beat?.cameraMotion) ? {
+            preset: beat.camera || '',
+            motion: beat.cameraMotion || '',
+            duration: beat.cameraDuration || 0,
+            ease: beat.cameraEase || 'out-sine',
+            } : {}),
+        };
+        this.elements.stage.dataset.cameraPreset = cameraOptions.preset || '';
+        this.elements.stage.dataset.cameraMotion = cameraOptions.motion || '';
+        this.elements.stage.dataset.cameraLayout = cameraOptions.layout || '';
+        this.elements.stage.dataset.cameraZoom = cameraOptions.zoom || '';
+        return this.scenePool.present(beat?.background || '', scenePlayer, presentation.shot, focusedEntry?.position || 'center', cameraOptions) || !scene3d;
     }
 
     buildPreloadPlan(beats) {
@@ -616,7 +891,10 @@ export class BeatPlayerApp {
             this.resourceLoading.update({ phase: 'checking' });
             const library = await loadResourceLibrary();
             if (generation !== this.resourceGeneration) return false;
-            const selected = buildDialogueAssetPlan(compiled, plan, library);
+            const chatIdolId = this.chatState.active ? beatActorId(this.chatState.idolKey) : '';
+            const selected = buildDialogueAssetPlan(compiled, plan, library, {
+                preloadFamiliesById: chatIdolId ? { [chatIdolId]: ['kiduku'] } : {},
+            });
             const resources = this.resources = new ResourceSession(library, { onProgress: progress => {
                 if (generation === this.resourceGeneration) this.resourceLoading.update(progress);
             }});
@@ -776,7 +1054,7 @@ export class BeatPlayerApp {
         this.renderPortrait(beat);
         const presentation = beat ? (this.fixedPresentation || resolveBeatShot(this.compiled.beats, current)) : null;
         this.elements.shot.textContent = beat
-            ? `镜头：${presentation.shot}${presentation.inherited ? '（沿用上一位偶像）' : ''}`
+            ? `镜头：` + presentation.shot + (beat.camera ? ' · 构图 ' + beat.camera : '') + (beat.cameraMotion ? ' · 运动 ' + beat.cameraMotion : '') + (presentation.inherited ? '（沿用上一位偶像）' : '')
             : '镜头：—';
     }
 
@@ -837,5 +1115,9 @@ export class BeatPlayerApp {
 if (/\/beat-player\.html$/i.test(window.location.pathname)) {
     const app = new BeatPlayerApp(document);
     window.beatPlayer = app;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('mode') === 'chat') {
+        window.requestAnimationFrame(() => app.enterChatMode(params.get('idol') || ''));
+    }
     window.addEventListener('beforeunload', () => app.dispose(), { once: true });
 }

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GakumasSceneStage } from './gakumas-scene.js?v=20261017-browser-cache-v1';
+import { GakumasSceneStage } from './gakumas-scene.js?v=20261024-danceroom-camera-v2';
 import { GakumasPostPass } from './gakumas-post.js?v=20261004-beat-taa-v2';
 import { isBeatScene, resolveBeatBackgroundAsset, sceneAssetUrl } from './beat-background-assets.js?v=20261008-background-aliases-v1';
 
@@ -27,6 +27,7 @@ export class BeatScenePool {
         this.warmQueue = Promise.resolve();
         this.disposed = false;
         this.fallbackCanvas = null;
+        this.fallbackCameraAnimation = 0;
     }
 
     async preload(names) {
@@ -39,7 +40,7 @@ export class BeatScenePool {
             stage.resources = this.resources;
             const entry = { asset, stage, loaded: false };
             this.entries.set(name, entry);
-            entry.ready = stage.load(sceneAssetUrl(asset), { layout: 'generic-medium' }).then(stats => {
+            entry.ready = stage.load(sceneAssetUrl(asset), { layout: asset.defaultLayout || 'generic-medium' }).then(stats => {
                 entry.loaded = Boolean(stats) && !this.disposed;
                 if (this.disposed) stage.unload();
                 return entry.loaded;
@@ -72,6 +73,7 @@ export class BeatScenePool {
                         player.renderFrame();
                     } finally {
                         player.setStageScene(null);
+                        player.releasePresentationBuffers?.();
                     }
                     await new Promise(resolve => requestAnimationFrame(resolve));
                     if (!isCurrent() || this.disposed) return false;
@@ -82,7 +84,7 @@ export class BeatScenePool {
         return this.warmQueue;
     }
 
-    present(name, player, shot = 'medium', position = 'center') {
+    present(name, player, shot = 'medium', position = 'center', cameraOptions = {}) {
         if (this.activePlayer && this.activePlayer !== player) this.activePlayer.setStageScene(null);
         this.activePlayer = null;
         if (this.fallbackCanvas) this.fallbackCanvas.style.visibility = 'hidden';
@@ -95,15 +97,15 @@ export class BeatScenePool {
         if (!entry?.loaded) return false;
         if (player) {
             this.activePlayer = player;
-            player.setStageScene(entry.stage, shot, position);
+            player.setStageScene(entry.stage, shot, position, cameraOptions);
             player.renderFrame();
         } else {
-            this.drawBackground(entry.stage, shot, position);
+            this.drawBackground(entry.stage, shot, position, true, cameraOptions);
         }
         return true;
     }
 
-    drawBackground(stage, shot, position, visible = true) {
+    drawBackground(stage, shot, position, visible = true, cameraOptions = {}) {
         if (!this.fallbackCanvas) {
             const canvas = this.container.ownerDocument.createElement('canvas');
             canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2;';
@@ -120,26 +122,46 @@ export class BeatScenePool {
             });
             this.fallbackResize.observe(this.container);
         }
-        stage.applyBeatLayout(shot, position);
+        if (this.fallbackCameraAnimation) cancelAnimationFrame(this.fallbackCameraAnimation);
+        this.fallbackCameraAnimation = 0;
+        stage.applyBeatLayout(shot, position, cameraOptions);
         stage.scene.add(stage.root);
         if (stage.sky) stage.scene.add(stage.sky);
         const rect = this.container.getBoundingClientRect();
         const width = Math.max(1, rect.width), height = Math.max(1, rect.height);
         this.fallbackRenderer.setSize(width, height, false);
-        const view = stage.cameraView();
         const camera = this.fallbackCamera;
-        camera.position.fromArray(view.position);camera.up.fromArray(view.up);camera.lookAt(new THREE.Vector3().fromArray(view.target));
-        camera.aspect = width / height;camera.fov = view.fov;camera.near = view.near;camera.far = view.far;
-        stage.ensureCameraRange(camera);camera.updateProjectionMatrix();
+        const applyCamera = progress => {
+            const view = stage.cameraView(stage.layoutId, null, progress);
+            if (!view) return;
+            camera.position.fromArray(view.position); camera.up.fromArray(view.up); camera.lookAt(new THREE.Vector3().fromArray(view.target));
+            camera.aspect = width / height; camera.fov = view.fov; camera.near = view.near; camera.far = view.far;
+            stage.ensureCameraRange(camera); camera.updateProjectionMatrix();
+        };
+        const duration = Number(cameraOptions?.duration) > 0 ? Number(cameraOptions.duration) * 1000 : 0;
+        applyCamera(duration && visible ? 0 : 1);
         if (!visible) warmScene(this.fallbackRenderer, stage.scene, camera);
         this.fallbackPost.enabled = true;this.fallbackPost.apply(stage.post);this.fallbackPost.resetHistory = true;
         this.fallbackPost.render(() => this.fallbackRenderer.render(stage.scene, camera), camera);
         this.fallbackCanvas.style.visibility = visible ? 'visible' : 'hidden';
-        this.fallbackStage = stage;this.fallbackShot = shot;this.fallbackPosition = position;
+        this.fallbackStage = stage; this.fallbackShot = shot; this.fallbackPosition = position; this.fallbackCameraOptions = cameraOptions;
+        if (duration && visible) {
+            const started = performance.now();
+            const tick = now => {
+                if (this.disposed || this.fallbackStage !== stage) return;
+                const progress = Math.min(1, (now - started) / duration);
+                applyCamera(progress);
+                if (progress < 1) this.fallbackCameraAnimation = requestAnimationFrame(tick);
+                else this.fallbackCameraAnimation = 0;
+            };
+            this.fallbackCameraAnimation = requestAnimationFrame(tick);
+        }
     }
 
     dispose() {
         this.disposed = true;
+        if (this.fallbackCameraAnimation) cancelAnimationFrame(this.fallbackCameraAnimation);
+        this.fallbackCameraAnimation = 0;
         this.fallbackStage = null;
         this.activePlayer?.setStageScene(null);
         this.activePlayer = null;

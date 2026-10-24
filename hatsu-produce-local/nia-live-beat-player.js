@@ -1,7 +1,7 @@
 import { buildNiaLiveBeatTimeline, liveBeatSpeaker } from './nia-live-beat-core.js?v=20261014-live-close-v1';
 
 async function createDefaultPlayer(root, options) {
-    const { BeatPlayerApp } = await import('../mmd-dialogue-stage/beat-player.js?v=20261017-browser-cache-v1');
+    const { BeatPlayerApp } = await import('../mmd-dialogue-stage/beat-player.js?v=20261024-crowd-budget-v1');
     return new BeatPlayerApp(root, options);
 }
 

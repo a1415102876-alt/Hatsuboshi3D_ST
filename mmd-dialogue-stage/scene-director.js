@@ -174,11 +174,29 @@ export class SceneDirector {
             if (actor.action && entry.player.playSpeakerCue && names[idolId]) actionPromises.push(entry.player.playSpeakerCue(names[idolId] + '(' + actor.action + ')', { slideType: 'action', isCurrent }));
         }
         await Promise.all(actionPromises);
+        this.refreshCrowdBudget(currentSpeaker);
         return isCurrent();
     }
 
+    refreshCrowdBudget(speakerId = this.crowdSpeaker || '') {
+        if (speakerId) this.crowdSpeaker = speakerId;
+        const present = [...this.entries.values()].filter(entry => entry.present);
+        const count = Math.max(1, present.length);
+        const speakerPresent = present.some(entry => entry.canvas.dataset.idol === this.crowdSpeaker);
+        const fallback = speakerPresent ? null : present[0];
+        for (const entry of this.allEntries()) {
+            const visible = present.includes(entry);
+            entry.player.setCrowdBudget?.({
+                count: visible ? count : 1,
+                focused: !visible || count <= 1 || entry.canvas.dataset.idol === this.crowdSpeaker || entry === fallback,
+            });
+        }
+    }
+
     async speak(speaker, slideType) {
-        const entry = this.entries.get(sceneIdolId(speaker));
+        const speakerId = sceneIdolId(speaker);
+        if (speakerId) this.refreshCrowdBudget(speakerId);
+        const entry = this.entries.get(speakerId);
         if (!entry?.present) return false;
         const generation = this.generation;
         return entry.player.playSpeakerCue(speaker, { slideType,
@@ -207,6 +225,7 @@ export class SceneDirector {
     }
 
     resume() {
+        this.refreshCrowdBudget();
         for (const entry of this.entries.values()) if (entry.present) entry.player.resume();
     }
 

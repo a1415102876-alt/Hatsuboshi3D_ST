@@ -1786,6 +1786,12 @@ const data = {
     },
     "locations": [
       {
+        "alias": "家·教室（午）",
+        "token": "home-classroom-noon",
+        "group": "住宅",
+        "family": "env_3d_home_classroom-00-00"
+      },
+      {
         "alias": "班级教室",
         "token": "school-classroom-00",
         "group": "校内",

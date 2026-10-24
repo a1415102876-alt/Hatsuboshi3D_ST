@@ -11,9 +11,12 @@
   const UME_REFERENCE_ID = "ce90bb98872a4cf0a81c39f1fc24707e";
   const RINAMI_REFERENCE_ID = "fb23cd92823d4274a517d7d5bb3340ec";
   const CHINA_REFERENCE_ID = "f6e6061c803c4d8fa371fdf658c35e2a";
+  const TSUBAME_REFERENCE_ID = "39d27c7315044ebab7997e160b2d7f74";
+  const SUMIKA_REFERENCE_ID = "4199b1062c28461ca822d130138e99d1";
+  const MAO_REFERENCE_ID = "4199b1062c28461ca822d130138e99d1";
   const DEFAULT_WORKER_ORIGIN = "https://hatsuboshitest.a1415102876.workers.dev";
   const DEFAULT_MODEL = "s2.1-pro-free";
-  const PRONUNCIATION_VERSION = "20261017-1";
+  const PRONUNCIATION_VERSION = "20261024-2";
   // User-supplied kana readings; generated offline with tools/generate-fish-pronunciation.py.
   // Pitch is OpenJTalk's default inference, not extracted game voice accent.
   const PRONUNCIATION_RULES = Object.freeze([
@@ -30,6 +33,12 @@
     ["姫崎莉波", "ひめさき　りなみ", "hi1me0sa0ki0ri0na1mi0"],
     ["十王星南", "じゅうおう　せな", "ju0u1o1o1se1na0"],
     ["雨夜燕", "あまや　つばめ", "a1ma0ya0tsu0ba1me1"],
+    ["shiun sumika", "しうん　すみか", "shi0u1N1su1mi0ka0"],
+    ["shiun-sumika", "しうん　すみか", "shi0u1N1su1mi0ka0"],
+    ["arimura mao", "ありむら　まお", "a1ri0mu0ra1ma0o1"],
+    ["arimura-mao", "ありむら　まお", "a1ri0mu0ra1ma0o1"],
+    ["amaya tsubame", "あまや　つばめ", "a1ma0ya0tsu0ba1me1"],
+    ["amaya-tsubame", "あまや　つばめ", "a1ma0ya0tsu0ba1me1"],
     ["初星", "はつぼし", "ha0tsu1bo0shi0"],
     ["毬", "まり", "ma0ri1"]
   ].map(([key, reading, value]) => Object.freeze({ key, reading, value })));
@@ -87,7 +96,25 @@
     ["china", CHINA_REFERENCE_ID],
     ["kuramoto china", CHINA_REFERENCE_ID],
     ["仓本千奈", CHINA_REFERENCE_ID],
-    ["千奈", CHINA_REFERENCE_ID]
+    ["千奈", CHINA_REFERENCE_ID],
+    ["atbm", TSUBAME_REFERENCE_ID],
+    ["tsubame", TSUBAME_REFERENCE_ID],
+    ["amaya tsubame", TSUBAME_REFERENCE_ID],
+    ["amaya-tsubame", TSUBAME_REFERENCE_ID],
+    ["雨夜燕", TSUBAME_REFERENCE_ID],
+    ["燕", TSUBAME_REFERENCE_ID],
+    ["ssmk", SUMIKA_REFERENCE_ID],
+    ["sumika", SUMIKA_REFERENCE_ID],
+    ["shiun sumika", SUMIKA_REFERENCE_ID],
+    ["shiun-sumika", SUMIKA_REFERENCE_ID],
+    ["紫云清夏", SUMIKA_REFERENCE_ID],
+    ["清夏", SUMIKA_REFERENCE_ID],
+    ["amao", MAO_REFERENCE_ID],
+    ["mao", MAO_REFERENCE_ID],
+    ["arimura mao", MAO_REFERENCE_ID],
+    ["arimura-mao", MAO_REFERENCE_ID],
+    ["有村麻央", MAO_REFERENCE_ID],
+    ["麻央", MAO_REFERENCE_ID]
   ]);
 
   const state = {
@@ -327,7 +354,7 @@
         model: state.model
       };
       const items = PRONUNCIATION_RULES
-        .filter((rule) => item.text.includes(rule.key))
+        .filter((rule) => item.text.toLocaleLowerCase().includes(rule.key.toLocaleLowerCase()))
         .sort((left, right) => right.key.length - left.key.length)
         .map(({ key, value }) => ({ key, value, case_sensitive: false }));
       if (items.length) payload.pronunciation_dictionary = [{ items }];
@@ -561,6 +588,9 @@
     DEFAULT_PROXY_URL,
     DEFAULT_WORKER_ORIGIN,
     DEFAULT_MODEL,
+    TSUBAME_REFERENCE_ID,
+    SUMIKA_REFERENCE_ID,
+    MAO_REFERENCE_ID,
     configure,
     getDefaultProxyUrl,
     getConfig,

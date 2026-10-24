@@ -19,11 +19,11 @@ import { idolAssetUrls, motionAssetUrls, motionAvailability } from './library-cl
 import { idolCostumeVariant, resolveBeatCostume } from './beat-costumes.js?v=20261013-all-idol-solo1-v1';
 import { GAKUMAS_TEXTURE_KINDS, GAKUMAS_ACTIVE_TEXTURE_KINDS, selectMaterialTextures, setTextureColorSpace, textureDescriptor, textureUsesColorSpace } from './gakumas-materials.js?v=20261007-solo1-rampadd-v1';
 import { injectActorShader } from './gakumas-shader.js?v=20261004-key-view-v1';
-import { actorStencilState, classifyActorPass, placeCharacterShadowLight, shouldCastCharacterShadow, shouldReceiveCharacterShadow } from './gakumas-passes.js?v=20261003-hair-cover-fix-v16';
+import { actorStencilState, classifyActorPass, placeCharacterShadowLight, shouldCastCharacterShadow, shouldReceiveCharacterShadow } from './gakumas-passes.js?v=20261024-crowd-budget-v1';
 import { HairCoverStage } from './gakumas-hair-cover.js?v=20261005-hair-outline-v1';
 import { GAKUMAS_LOOK, GakumasLookPass, applyGakumasLookUniforms, createGakumasLookUniformValues, matcapKeyDirection } from './gakumas-look.js?v=20261004-key-az60-v1';
 import { GakumasPostPass } from './gakumas-post.js?v=20261004-beat-taa-v2';
-import { backgroundPanAmount, stagePlateCover } from './beat-player-core.js?v=20261011-action-rules-v3';
+import { backgroundPanAmount, stagePlateCover } from './beat-player-core.js?v=20261023-camera-v1';
 import { hasGakumasVertexColorAttribute } from './gakumas-outline.js?v=20260909-outline1';
 import {
     LIVE_PORTRAIT_IDOL_ID,
@@ -37,7 +37,8 @@ import { parsePortraitCue, selectPortraitPerformance, portraitPerformanceCandida
 import { StageAttentionController } from './stage-attention.js?v=20260914-stage-attention-v1';
 import { bindVisemeMorphs } from './dialogue-intent.js?v=20261011-emotion-cue-labels-v2';
 import { applyTalkMouthProfile, selectTalkMouthProfile, talkArticulationFromPhase } from './tts-lip-sync.js?v=20261013-audio-talk-v3';
-import { SceneDirector } from './scene-director.js?v=20261017-browser-cache-v1';
+import { SceneDirector } from './scene-director.js?v=20261024-crowd-budget-v1';
+import { portraitCrowdBudget } from './portrait-crowd-budget.js?v=20261024-crowd-budget-v1';
 import { configureGlbAnimationTarget, detectLivePortraitFormat } from './live-portrait-model.js';
 import { bindGlbMorphTracks } from './glb-morph-tracks.js?v=20260929-face-primitives-v1';
 import { SecondaryMotion, applyHairRestRotationRebase, rebaseHairAnimationTracks, refreshRestInverseBinds } from './gakumas-secondary-motion.js?v=20261010-left-front-hair-gap-v1';
@@ -189,6 +190,9 @@ export class LivePortraitRuntime {
         this.activeTalkProfile = null;
         this.visemeBound = {};
         this.paused = true;
+        this.crowdBudget = null;
+        this.crowdSerial = 0;
+        this.physicsDebt = 0;
         this.config = null;
         this.map = null;
         this.status = null;
@@ -1421,6 +1425,43 @@ export class LivePortraitRuntime {
         this.setTalkLevel(0, { active: false });
         this.paused = true;
         this.stopLoop();
+        this.releasePresentationBuffers();
+    }
+
+    setCrowdBudget({ count = 1, focused = true } = {}) {
+        this.crowdBudget = portraitCrowdBudget({
+            count,
+            focused,
+            devicePixelRatio: globalThis.devicePixelRatio || 1,
+        });
+        if (!this.paused) this.applyCrowdRendering();
+    }
+
+    applyCrowdRendering() {
+        const budget = this.crowdBudget || portraitCrowdBudget({ devicePixelRatio: globalThis.devicePixelRatio || 1 });
+        if (this.renderer && this.renderer.getPixelRatio() !== budget.pixelRatio) {
+            this.renderer.setPixelRatio(budget.pixelRatio);
+            if (this.canvas) this.canvas.width = 0;
+            this.resize();
+        }
+        this.crowdShadowMap = budget.shadowMap;
+        if (this.outlineEffect) this.outlineEffect.enabled = budget.outline;
+        if (this.postPass && this.postPass.modules.taa !== budget.taa) {
+            this.postPass.setModule('taa', budget.taa);
+            this.postPass.resetHistory = true;
+        }
+    }
+
+    releasePresentationBuffers() {
+        const shadow = this.characterShadowLight?.shadow;
+        if (shadow?.map) {
+            shadow.map.dispose();
+            shadow.map = null;
+        }
+        if (!this.renderer) return;
+        this.renderer.setSize(1, 1, false);
+        this.postPass?.setSize(1, 1);
+        this.lookPass?.setSize(1, 1);
     }
 
     setPresentationActive(active) {
@@ -1434,6 +1475,7 @@ export class LivePortraitRuntime {
         if (this.paused) return;
         this.paused = true;
         this.stopLoop();
+        this.releasePresentationBuffers();
     }
 
     settleInactiveActions() {
@@ -1449,6 +1491,7 @@ export class LivePortraitRuntime {
         if (!this.ready) return;
         this.paused = false;
         this.clock.getDelta();
+        this.applyCrowdRendering();
         this.startLoop();
         this.resize();
         // Resuming a canvas happens on every Beat flip. Reframing here would
@@ -1491,19 +1534,28 @@ export class LivePortraitRuntime {
             }
             this.frameId = requestAnimationFrame(tick);
             const delta = Math.min(this.clock.getDelta(), 0.05);
+            const stride = this.crowdBudget?.drawStride || 1;
+            this.crowdSerial = (this.crowdSerial + 1) >>> 0;
+            const drawThisFrame = stride <= 1 || this.crowdSerial % stride === 1;
+            this.physicsDebt = Math.min(0.1, (this.physicsDebt || 0) + delta);
+            // Background actors in a group draw every other frame. Skipping the
+            // skeleton update keeps physics from sampling a half-applied pose.
+            if (!drawThisFrame) return;
+            const step = Math.min(this.physicsDebt, 0.05);
+            this.physicsDebt = 0;
             if (this.model) {
                 this.secondaryMotion?.restoreBeforeAnimation?.();
                 if (this.talkTakeoverActive) {
                     this.restoreTalkBaseMouth();
                     this.talkBasePreparedForFrame = true;
                 }
-                if (this.modelFormat === 'glb') this.animationMixer?.update(delta);
-                else this.helper.update(delta);
+                if (this.modelFormat === 'glb') this.animationMixer?.update(step);
+                else this.helper.update(step);
                 this.flushPendingAnimationFinishes();
-                if (this.secondaryMotionBound) this.secondaryMotion.update(delta);
+                if (this.secondaryMotionBound) this.secondaryMotion.update(step);
                 this.facialEffects.update();
-                this.updateAttention(delta);
-                this.updateTalkingMorph(delta);
+                this.updateAttention(step);
+                this.updateTalkingMorph(step);
                 this.harvestFades();
                 this.model.updateMatrixWorld(true);
             }
@@ -1522,13 +1574,15 @@ export class LivePortraitRuntime {
         this.drawPortrait();
     }
 
-    setStageScene(stage, shot = 'medium', position = 'center') {
+    setStageScene(stage, shot = 'medium', position = 'center', cameraOptions = {}) {
         const previous = this.stageScene;
         if (previous && previous !== stage) {
             previous.scene.add(previous.root);
             if (previous.sky) previous.scene.add(previous.sky);
         }
         this.stageScene = stage || null;
+        if (this.stageCameraAnimation) cancelAnimationFrame(this.stageCameraAnimation);
+        this.stageCameraAnimation = 0;
         if (!stage) {
             if (previous && this.vnCameraState && this.camera) {
                 const saved = this.vnCameraState;
@@ -1547,19 +1601,36 @@ export class LivePortraitRuntime {
         if (!this.scene || !this.camera) return;
         this.setStagePlate(null);
         this.setShotFrame({ scale: 1, shiftX: 0, originY: .5 });
-        stage.applyBeatLayout(shot, position);
+        stage.applyBeatLayout(shot, position, cameraOptions);
         this.scene.add(stage.root);
         if (stage.sky) this.scene.add(stage.sky);
-        const view = stage.cameraView(stage.layoutId, this.sceneModelFrame);
-        this.camera.position.fromArray(view.position);
-        this.camera.up.fromArray(view.up);
-        this.camera.lookAt(new THREE.Vector3().fromArray(view.target));
-        this.camera.fov = view.fov;this.camera.near = view.near;this.camera.far = view.far;
-        stage.ensureCameraRange(this.camera);
-        this.camera.updateProjectionMatrix();
-        const key = `${stage.url}|${shot}|${position}`;
+        const duration = Number(cameraOptions?.duration) > 0 ? Number(cameraOptions.duration) * 1000 : 0;
+        const applyCamera = progress => {
+            const view = stage.cameraView(stage.layoutId, this.sceneModelFrame, progress);
+            if (!view) return;
+            this.camera.position.fromArray(view.position);
+            this.camera.up.fromArray(view.up);
+            this.camera.lookAt(new THREE.Vector3().fromArray(view.target));
+            this.camera.fov = view.fov; this.camera.near = view.near; this.camera.far = view.far;
+            stage.ensureCameraRange(this.camera);
+            this.camera.updateProjectionMatrix();
+        };
+        applyCamera(duration ? 0 : 1);
+        if (duration) {
+            const started = performance.now();
+            const tick = now => {
+                if (this.stageScene !== stage) return;
+                const progress = Math.min(1, (now - started) / duration);
+                applyCamera(progress);
+                if (progress < 1) this.stageCameraAnimation = requestAnimationFrame(tick);
+                else this.stageCameraAnimation = 0;
+            };
+            this.stageCameraAnimation = requestAnimationFrame(tick);
+        }
+        const key = stage.url + '|' + shot + '|' + position + '|' + (cameraOptions?.preset || '') + '|' + (cameraOptions?.motion || '');') + ';
         if (this.postPass && key !== this.stageSceneViewKey) this.postPass.apply(stage.post);
         this.stageSceneViewKey = key;
+        this.applyCrowdRendering();
     }
 
     setStagePlate(image, position = 'center') {
@@ -2066,7 +2137,7 @@ export class LivePortraitRuntime {
         this.hairCoverStage.update(axis, this.gakumasPasses.hairCoverMinimum);
         if (axis) this.gakumasHeadRight.setFromMatrixColumn(axis.matrixWorld, 0).normalize();
         const shadowLight = this.characterShadowLight;
-        const characterShadow = placeCharacterShadowLight(shadowLight, this.camera, this.characterShadowFit);
+        const characterShadow = placeCharacterShadowLight(shadowLight, this.camera, this.characterShadowFit, this.crowdShadowMap || this.crowdBudget?.shadowMap || 4096);
         this.gakumasUniforms.forEach(uniforms => {
             uniforms.gkLightDirection.value.copy(direction);
             uniforms.gkLightColor.value.copy(this.keyLight.color);

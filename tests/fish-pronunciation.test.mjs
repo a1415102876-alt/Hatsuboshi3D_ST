@@ -19,6 +19,12 @@ const expected=[
  ['姫崎莉波','ひめさき　りなみ','himesakirinami'],
  ['十王星南','じゅうおう　せな','juuoosena'],
  ['雨夜燕','あまや　つばめ','amayatsubame'],
+ ['shiun sumika','しうん　すみか','shiuNsumika'],
+ ['shiun-sumika','しうん　すみか','shiuNsumika'],
+ ['arimura mao','ありむら　まお','arimuramao'],
+ ['arimura-mao','ありむら　まお','arimuramao'],
+ ['amaya tsubame','あまや　つばめ','amayatsubame'],
+ ['amaya-tsubame','あまや　つばめ','amayatsubame'],
  ['初星','はつぼし','hatsuboshi'],
  ['毬','まり','mari']
 ];
@@ -29,7 +35,7 @@ function client(fetch){
  return api;
 }
 
-test('the 15 supplied readings produce Japanese phonemes, including long vowels',()=>{
+test('the shipped readings produce Japanese phonemes, including long vowels',()=>{
  const api=client();const rules=api.PRONUNCIATION_RULES;
  assert.ok(Array.isArray(rules),'the shipped client must expose the versioned pronunciation rules');
  assert.equal(rules.length,expected.length);assert.ok(Object.isFrozen(rules));
@@ -65,7 +71,7 @@ test('the shared TTS client dictionary survives the Cloudflare proxy',async()=>{
   const text=expected.map(row=>row[0]).join('、');
   const audio=await api.prepare({id:'all',speaker:'hmsz',text});assert.ok(audio?.blob);
   const items=upstream[0].pronunciation_dictionary?.[0]?.items;
-  assert.equal(items?.length,15,'the proxy must forward all matching rules to Fish');
+  assert.equal(items?.length,expected.length,'the proxy must forward all matching rules to Fish');
   assert.equal(upstream[0].text,text);assert.equal(upstream[0].reference_id,api.referenceIdForSpeaker('hmsz'));
   api.cancel();
  }finally{globalThis.fetch=originalFetch;}

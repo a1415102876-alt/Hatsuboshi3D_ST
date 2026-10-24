@@ -745,6 +745,31 @@
               <p id="beatText"></p>
               <button id="advanceBeatBtn" class="dialogue-advance" type="button" aria-label="下一段"></button>
             </div>
+            <div id="beatChatComposer" class="beat-chat-composer" hidden>
+              <div id="chatLog" class="beat-chat-log" hidden aria-hidden="true">
+                <div class="chat-log-empty">进入场景后，可以在这里和偶像聊天。</div>
+              </div>
+              <p id="chatStatus" class="beat-chat-status" aria-live="polite">正在准备场景…</p>
+              <div class="beat-chat-composer-row">
+                <textarea id="chatInput" class="beat-chat-input" rows="2" maxlength="500" placeholder="输入想和偶像聊的内容"></textarea>
+                <button id="sendChatBtn" class="event-button primary beat-chat-send" type="button">发送</button>
+              </div>
+              <select id="chatIdolSelect" hidden aria-hidden="true">
+                <option value="kotone">藤田琴音</option>
+                <option value="mao">有村麻央</option>
+                <option value="rinami">姬崎莉波</option>
+                <option value="hski">花海咲季</option>
+                <option value="hume">花海佑芽</option>
+                <option value="ssmk">紫云清夏</option>
+                <option value="kllj">葛城莉莉娅</option>
+                <option value="jsna">十王星南</option>
+                <option value="hmsz">秦谷美铃</option>
+                <option value="atbm">雨夜燕</option>
+                <option value="ttmr">月村手毬</option>
+                <option value="kcna">仓本千奈</option>
+                <option value="shro">筱泽广</option>
+              </select>
+            </div>
             <div id="beatChoices" class="beat-choices" hidden>
               <div id="beatChoiceList" class="beat-choice-list"></div>
               <div id="beatCustomChoicePanel" class="beat-custom-choice-panel" hidden>
@@ -937,22 +962,10 @@
     </article>
   </section>
 
-  <section id="freeChatOverlay" class="event-overlay" hidden aria-label="担当闲聊">
-    <article class="event-panel ai-prompt-panel">
-      <header class="event-head">
-        <div>
-          <p class="ui-kicker">Free Talk</p>
-          <h2>和担当闲聊</h2>
-        </div>
-        <span id="freeChatPhaseBadge" class="event-phase">First Live 前期</span>
-      </header>
-      <p class="ai-prompt-note">输入这次想和担当聊的话题。闲聊不会消耗行动次数，也不会推进日程或改变数值。</p>
-      <textarea id="freeChatTextarea" class="ai-prompt-textarea" spellcheck="false" placeholder="例如：问问她今天训练结束后最想吃什么"></textarea>
-      <footer class="event-actions">
-        <button id="freeChatCancelBtn" class="event-button secondary" type="button">取消</button>
-        <button id="freeChatSendBtn" class="event-button primary" type="button">发送闲聊</button>
-      </footer>
-    </article>
+  <section id="freeChatOverlay" hidden aria-hidden="true">
+    <textarea id="freeChatTextarea" hidden></textarea>
+    <button id="freeChatCancelBtn" type="button" hidden>关闭</button>
+    <button id="freeChatSendBtn" type="button" hidden>发送闲聊</button>
   </section>
 
   <section id="interactionOverlay" class="event-overlay" hidden aria-label="偶像互动">
@@ -1972,6 +1985,85 @@
             </div>
           </div>
 
+          <div id="phoneSandboxConsoleApp" class="sandbox-console-app" hidden>
+            <header class="sandbox-console-head">
+              <div class="sandbox-console-brand">
+                <span class="sandbox-console-mark" aria-hidden="true">SC</span>
+                <div>
+                  <h1>沙盒控制台</h1>
+                  <p>SANDBOX CONTROL</p>
+                </div>
+              </div>
+              <span id="sandboxConsoleModeBadge" class="sandbox-console-mode-badge">沙盒模式</span>
+            </header>
+
+            <div id="sandboxConsoleMainView" class="sandbox-console-view">
+              <div class="sandbox-console-summary" id="sandboxConsoleSummary" aria-live="polite">第 1 天 · 08:00 · 地图</div>
+              <p id="sandboxConsoleRequestNotice" class="sandbox-console-request-notice" hidden>当前有生成任务，流程状态修改将在本次任务结束后生效。</p>
+              <form id="sandboxConsoleDraftForm" class="sandbox-console-scroll">
+                <section class="sandbox-console-section">
+                  <div class="sandbox-console-section-title"><span>运行位置</span><small>RUN STATE</small></div>
+                  <div class="sandbox-console-field-grid">
+                    <label class="sandbox-console-field" for="sandboxConsoleDay"><span>沙盒天数</span><input id="sandboxConsoleDay" type="number" min="1" max="999" step="1"></label>
+                    <label class="sandbox-console-field" for="sandboxConsoleClock"><span>当前时间</span><input id="sandboxConsoleClock" type="time" step="300"></label>
+                    <label class="sandbox-console-field sandbox-console-field-wide" for="sandboxConsoleLocation"><span>当前地点</span><select id="sandboxConsoleLocation"></select></label>
+                    <label class="sandbox-console-field sandbox-console-field-wide" for="sandboxConsoleResponsible"><span>负责偶像</span><select id="sandboxConsoleResponsible"></select></label>
+                  </div>
+                  <fieldset class="sandbox-console-produced">
+                    <legend>已制作偶像</legend>
+                    <div id="sandboxConsoleProducedList" class="sandbox-console-check-list"></div>
+                  </fieldset>
+                </section>
+
+                <section class="sandbox-console-section">
+                  <div class="sandbox-console-section-title"><span>数值调整</span><small>PARAMETERS</small></div>
+                  <div class="sandbox-console-field-grid sandbox-console-stats-grid">
+                    <label class="sandbox-console-field" for="sandboxConsoleStamina"><span>体力</span><input id="sandboxConsoleStamina" type="number" min="0" max="100" step="1"></label>
+                    <label class="sandbox-console-field" for="sandboxConsoleStress"><span>压力</span><input id="sandboxConsoleStress" type="number" min="0" max="100" step="1"></label>
+                    <label class="sandbox-console-field" for="sandboxConsoleTrust"><span>信赖 / 好感</span><input id="sandboxConsoleTrust" type="number" min="0" max="100" step="1"></label>
+                    <label class="sandbox-console-field" for="sandboxConsoleVo"><span>Vo</span><input id="sandboxConsoleVo" type="number" min="0" max="99999" step="1"></label>
+                    <label class="sandbox-console-field" for="sandboxConsoleDa"><span>Da</span><input id="sandboxConsoleDa" type="number" min="0" max="99999" step="1"></label>
+                    <label class="sandbox-console-field" for="sandboxConsoleVi"><span>Vi</span><input id="sandboxConsoleVi" type="number" min="0" max="99999" step="1"></label>
+                  </div>
+                </section>
+
+                <div id="sandboxConsoleStatus" class="sandbox-console-status" role="status" aria-live="polite"></div>
+                <div class="sandbox-console-actions">
+                  <button id="sandboxConsoleAdvancedBtn" type="button" class="sandbox-console-button is-secondary">高级调试</button>
+                  <button id="sandboxConsoleUndoBtn" type="button" class="sandbox-console-button is-secondary">撤销编辑</button>
+                  <button id="sandboxConsoleApplyBtn" type="submit" class="sandbox-console-button is-primary">应用到当前存档</button>
+                </div>
+              </form>
+            </div>
+
+            <div id="sandboxConsoleAdvancedView" class="sandbox-console-view sandbox-console-advanced-view" hidden>
+              <div class="sandbox-console-advanced-head">
+                <button id="sandboxConsoleAdvancedBackBtn" type="button" class="sandbox-console-back-button">返回普通参数</button>
+                <div><strong>高级调试</strong><small>FLOW CONTROL</small></div>
+              </div>
+              <p class="sandbox-console-warning">这些开关可能跳过沙盒流程校验，应用前建议先保存当前存档。</p>
+              <div class="sandbox-console-scroll">
+                <section class="sandbox-console-section">
+                  <label class="sandbox-console-toggle" for="sandboxConsoleOpeningComplete"><span><strong>开场已完成</strong><small>跳过亚纱里老师开场</small></span><input id="sandboxConsoleOpeningComplete" type="checkbox"></label>
+                  <label class="sandbox-console-toggle" for="sandboxConsoleInviteComplete"><span><strong>邀请流程已完成</strong><small>允许进入完整沙盒地图</small></span><input id="sandboxConsoleInviteComplete" type="checkbox"></label>
+                  <label class="sandbox-console-toggle" for="sandboxConsoleSecondIdolUnlocked"><span><strong>第二位偶像已解锁</strong><small>开放追加担当</small></span><input id="sandboxConsoleSecondIdolUnlocked" type="checkbox"></label>
+                  <label class="sandbox-console-toggle" for="sandboxConsoleAtApartment"><span><strong>当前在宿舍</strong><small>切换公寓状态显示</small></span><input id="sandboxConsoleAtApartment" type="checkbox"></label>
+                </section>
+                <section class="sandbox-console-section">
+                  <label class="sandbox-console-field" for="sandboxConsoleFacility"><span>当前设施</span><select id="sandboxConsoleFacility"><option value="">无</option><option value="lesson">上课</option><option value="training">训练</option><option value="rest">休息</option><option value="first_live">First Live</option></select></label>
+                  <label class="sandbox-console-field" for="sandboxConsoleFirstLive"><span>First Live 状态</span><select id="sandboxConsoleFirstLive"><option value="available">可挑战</option><option value="generating">生成中</option><option value="recovery_required">需要恢复</option><option value="cooldown">冷却中</option><option value="completed">已完成</option></select></label>
+                </section>
+                <section class="sandbox-console-section sandbox-console-advanced-actions">
+                  <button id="sandboxConsoleRefreshWorldBtn" type="button" class="sandbox-console-button is-secondary">打开世界引擎设置</button>
+                  <p id="sandboxConsoleAdvancedStatus" class="sandbox-console-status"></p>
+                </section>
+              </div>
+              <div class="sandbox-console-actions sandbox-console-advanced-footer">
+                <button id="sandboxConsoleAdvancedApplyBtn" type="button" class="sandbox-console-button is-primary">应用高级设置</button>
+              </div>
+            </div>
+          </div>
+
           <nav id="phoneNavBar" class="phone-navbar" hidden aria-label="手机功能栏">
             <button id="phoneNavBackBtn" type="button" class="phone-nav-btn" aria-label="返回">
               <svg aria-hidden="true"><use href="#icon-chevron-left"></use></svg>
@@ -2303,7 +2395,7 @@
     globalThis.Hatsu3DPortraitCues = portraitCues;
   </script>
   <script src="../mmd-dialogue-stage/beat-background-routing.js?v=20261014-idol-bond-v1"></script>
-  <script src="./fish-tts.js?v=20261013-china-voice-v2"></script>
+  <script src="./fish-tts.js?v=20261024-voice-map-v2"></script>
   <script src="./nia-audition-loading.js?v=20261017-tts-setup-v1"></script>
   <script src="./app.js?v=20261017-tts-setup-v1"></script>
 </body>

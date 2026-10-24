@@ -36,7 +36,7 @@ export function buildAuditionAssetPlan(command, library) {
 
 // Plan against the final compiled slides, including business-specific stage
 // entries. Choices are pinned here and reused by playback instead of re-rolling.
-export function buildDialogueAssetPlan(compiled, preload, library, { random } = {}) {
+export function buildDialogueAssetPlan(compiled, preload, library, { random, preloadFamiliesById = {} } = {}) {
     // Reopening the same generated segment reuses the same selection. Different
     // dialogue text still samples the existing weighted animation rules.
     let seed = 2166136261;
@@ -80,6 +80,13 @@ export function buildDialogueAssetPlan(compiled, preload, library, { random } = 
         const idle = eligible[findIdlePlaylistIndex(eligible, id)];
         if (!idle) throw new Error(`缺少角色待机动作：${id}`);
         motions(idle);
+        for (const family of (preloadFamiliesById?.[id] || [])) {
+            const familyId = String(family || '').trim();
+            if (!familyId) continue;
+            const familyItems = eligible.filter(item => String(item.catalog?.family || item.family || '') === familyId);
+            if (!familyItems.length) throw new Error(`缺少角色预加载动作族：${id}/${familyId}`);
+            familyItems.forEach(motions);
+        }
         eligible.filter(item => (item.additive || item.catalog?.additive) && item.catalog?.family === 'idle-preview' && /idle-\d+-add-lp/i.test(item.stem || '') && item.body).forEach(motions);
         const selected = new Map(); performances.set(id, selected);
         for (const speaker of [...new Set([...(cuesById[id] || []), `${names[id]}(待机)`])]) {

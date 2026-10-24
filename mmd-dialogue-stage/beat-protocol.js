@@ -3,10 +3,13 @@ import { sceneIdolId, SCENE_IDOLS, STAR_EYE_IDOLS } from './scene-protocol.js?v=
 import { BEAT_CUE_IDS, BEAT_BODY_CUE_SPECS, BEAT_EFFECT_ALIASES, BEAT_EFFECT_IDS, BEAT_FACE_ALIASES, BEAT_FACE_IDS, BEAT_OVERLAY_CUE_IDS, resolveBeatCueAlias } from './beat-cues.js?v=20261011-stage-cue-rules-v4';
 import { resolveBeatBackgroundAsset } from './beat-background-assets.js?v=20261008-background-aliases-v1';
 import { resolveBeatCostume } from './beat-costumes.js?v=20261013-all-idol-solo1-v1';
-import { beatActorId } from './beat-player-core.js?v=20261014-npc-portraits-v1';
+import { BEAT_CAMERA_EASES, BEAT_CAMERA_MOTIONS, BEAT_CAMERA_PRESETS, beatActorId } from './beat-player-core.js?v=20261023-camera-v1';
 
 const DEFAULT_CUES = BEAT_CUE_IDS;
 const DEFAULT_SHOTS = Object.freeze(['wide', 'medium', 'close', 'reaction', 'keep']);
+const DEFAULT_CAMERA_PRESETS = BEAT_CAMERA_PRESETS;
+const DEFAULT_CAMERA_MOTIONS = BEAT_CAMERA_MOTIONS;
+const DEFAULT_CAMERA_EASES = BEAT_CAMERA_EASES;
 const DEFAULT_WAITS = Object.freeze(['text', 'voice', 'none']);
 const DEFAULT_POSITIONS = Object.freeze(['left', 'center', 'right']);
 const DEFAULT_FACES = BEAT_FACE_IDS;
@@ -70,7 +73,7 @@ function parseLocalizedBeatText(rawText, speaker) {
 }
 
 function isFishVoicedSpeaker(speaker) {
-    return /(?:kotone|fktn|藤田琴音|琴音|hski|花海咲季|咲季|ttmr|月村手毬|手毬|shro|筱泽广|篠澤広|广|hmsz|秦谷美铃|美铃|kllj|葛城莉莉娅|莉莉娅|jsna|十王星南|星南|hume|花海佑芽|佑芽|hrnm|rinami|姬崎莉波|莉波|kcna|仓本千奈|千奈)/i.test(String(speaker || ''));
+    return /(?:kotone|fktn|藤田琴音|琴音|hski|花海咲季|咲季|ttmr|月村手毬|手毬|shro|筱泽广|篠澤広|广|hmsz|秦谷美铃|美铃|kllj|葛城莉莉娅|莉莉娅|jsna|十王星南|星南|hume|花海佑芽|佑芽|hrnm|rinami|姬崎莉波|莉波|ssmk|sumika|shiun\s+sumika|紫云清夏|清夏|amao|mao|arimura\s+mao|有村麻央|麻央|atbm|tsubame|amaya\s+tsubame|雨夜燕|燕|kcna|仓本千奈|千奈)/i.test(String(speaker || ''));
 }
 
 function addError(errors, code, message, index, beat = null) {
@@ -124,6 +127,9 @@ export function parseBeatScript(source, options = {}) {
         : null;
     const cues = asSet(options.cues, DEFAULT_CUES);
     const shots = asSet(options.shots, DEFAULT_SHOTS);
+    const cameraPresets = asSet(options.cameraPresets, DEFAULT_CAMERA_PRESETS);
+    const cameraMotions = asSet(options.cameraMotions, DEFAULT_CAMERA_MOTIONS);
+    const cameraEases = asSet(options.cameraEases, DEFAULT_CAMERA_EASES);
     const waits = asSet(options.waits, DEFAULT_WAITS);
     const positions = asSet(options.positions, DEFAULT_POSITIONS);
     const faces = asSet(options.faces, DEFAULT_FACES);
@@ -259,6 +265,25 @@ export function parseBeatScript(source, options = {}) {
             shot = shots.has('keep') ? 'keep' : [...shots][0] || 'keep';
         }
 
+        let camera = String(attributes.camera || '').trim().toLowerCase();
+        if (camera && !cameraPresets.has(camera)) {
+            addError(errors, 'unknown-camera', '未知 3D 构图：' + camera + '，已交给播放器按 shot 推断。', openIndex, beatId);
+            camera = '';
+        }
+        let cameraMotion = String(attributes['camera-motion'] || '').trim().toLowerCase();
+        if (cameraMotion && !cameraMotions.has(cameraMotion)) {
+            addError(errors, 'unknown-camera-motion', '未知镜头运动：' + cameraMotion + '，已忽略。', openIndex, beatId);
+            cameraMotion = '';
+        }
+        let cameraEase = String(attributes['camera-ease'] || '').trim().toLowerCase();
+        if (cameraEase && !cameraEases.has(cameraEase)) {
+            addError(errors, 'unknown-camera-ease', '未知镜头缓动：' + cameraEase + '，已回退到 out-sine。', openIndex, beatId);
+            cameraEase = 'out-sine';
+        }
+        let cameraDuration = Number(attributes['camera-duration']);
+        if (!Number.isFinite(cameraDuration) || cameraDuration <= 0) cameraDuration = 0;
+        else cameraDuration = Math.min(20, cameraDuration);
+
         const look = attributes.look || previousLook;
         let position = String(attributes.position || '').trim().toLowerCase();
         if (position === 'middle') position = 'center';
@@ -306,6 +331,10 @@ export function parseBeatScript(source, options = {}) {
         beat.costumes = Object.fromEntries(costumeByActor);
         if (previousBackgroundAsset) beat.backgroundAsset = previousBackgroundAsset;
         if (position) beat.position = position;
+        if (camera) beat.camera = camera;
+        if (cameraMotion) beat.cameraMotion = cameraMotion;
+        if (cameraEase) beat.cameraEase = cameraEase;
+        if (cameraDuration) beat.cameraDuration = cameraDuration;
         beats.push(beat);
         previousLook = look;
         previousShot = shot;

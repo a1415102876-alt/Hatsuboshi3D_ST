@@ -17,7 +17,7 @@
 
   const clone = (value) => JSON.parse(JSON.stringify(value));
   const vnLivePortraitState = {
-    moduleUrl: "/mmd-dialogue-stage/live-portrait.js?v=20261017-browser-cache-v1",
+    moduleUrl: "/mmd-dialogue-stage/live-portrait.js?v=20261024-crowd-budget-v1",
     director: null,
     sceneSession: 0,
     sceneLoad: null,
@@ -839,6 +839,196 @@
       ? configured
       : SANDBOX_SELECTABLE_IDOL_FALLBACK;
   }
+
+  function getSandboxConsoleAvailableIdols(currentState = state) {
+    const configured = Array.isArray(globalThis.HatsuTasks?.SANDBOX_SELECTABLE_IDOLS)
+      ? globalThis.HatsuTasks.SANDBOX_SELECTABLE_IDOLS
+      : Object.keys(idols);
+    const assigned = Array.isArray(currentState?.sandbox?.producedIdols)
+      ? currentState.sandbox.producedIdols
+      : [];
+    const responsible = currentState?.sandbox?.responsibleIdol || currentState?.idol || "";
+    return Array.from(new Set([...configured, ...assigned, responsible]
+      .map((name) => canonicalIdolName(name))
+      .filter((name) => name && idols[name])));
+  }
+
+  function getSandboxConsoleLocations() {
+    return getEffectiveWorldMapLocations().map((location) => ({
+      id: String(location.id || ""),
+      name: String(location.name || location.shortLabel || location.id || "")
+    })).filter((location) => location.id && location.name);
+  }
+
+  function getSandboxConsoleDraft(currentState = state) {
+    const challenge = currentState?.sandbox?.firstLiveChallenge || {};
+    return {
+      postLiveDay: Number(currentState?.freeMode?.postLiveDay) || 1,
+      clockMinutes: Number(currentState?.freeMode?.clockMinutes) || 8 * 60,
+      activeLocationId: String(currentState?.freeMode?.activeLocationId || ""),
+      responsibleIdol: canonicalIdolName(currentState?.sandbox?.responsibleIdol || currentState?.idol || ""),
+      producedIdols: Array.from(new Set((Array.isArray(currentState?.sandbox?.producedIdols)
+        ? currentState.sandbox.producedIdols
+        : []).map(canonicalIdolName).filter(Boolean))),
+      stamina: Number(currentState?.stamina) || 0,
+      stress: Number(currentState?.stress) || 0,
+      trust: Number(currentState?.trust) || 0,
+      affinity: Number(currentState?.trust) || 0,
+      Vo: Number(currentState?.Vo) || 0,
+      Da: Number(currentState?.Da) || 0,
+      Vi: Number(currentState?.Vi) || 0,
+      openingComplete: Boolean(currentState?.sandbox?.openingComplete),
+      inviteComplete: Boolean(currentState?.sandbox?.inviteComplete),
+      secondIdolUnlocked: Boolean(currentState?.sandbox?.secondIdolUnlocked),
+      atApartment: Boolean(currentState?.freeMode?.atApartment),
+      facilityKind: currentState?.freeMode?.facilityKind || null,
+      firstLiveStatus: String(challenge.status || "available")
+    };
+  }
+
+  function validateSandboxConsoleDraft(draft = {}, currentState = state) {
+    const base = getSandboxConsoleDraft(currentState);
+    const input = draft && typeof draft === "object" && !Array.isArray(draft) ? draft : {};
+    const errors = [];
+    const startMinutes = typeof FREE_MODE_DAY_START_MINUTES === "number" ? FREE_MODE_DAY_START_MINUTES : 8 * 60;
+    const endMinutes = typeof FREE_MODE_LATE_END_MINUTES === "number" ? FREE_MODE_LATE_END_MINUTES : 23 * 60;
+    const locations = new Set(getSandboxConsoleLocations().map((location) => location.id));
+    const availableIdols = new Set(getSandboxConsoleAvailableIdols(currentState));
+
+    const numberValue = (key, fallback, min, max, integer = false) => {
+      if (input[key] === undefined) return fallback;
+      const number = Number(input[key]);
+      if (!Number.isFinite(number)) {
+        errors.push(`${key} 不是有效数字`);
+        return fallback;
+      }
+      const rounded = integer ? Math.round(number) : number;
+      return Math.max(min, Math.min(max, rounded));
+    };
+    const postLiveDay = numberValue("postLiveDay", base.postLiveDay, 1, 999, true);
+    const rawClock = numberValue("clockMinutes", base.clockMinutes, startMinutes, endMinutes);
+    const clockMinutes = Math.max(startMinutes, Math.min(endMinutes, Math.round(rawClock / 5) * 5));
+    const activeLocationId = input.activeLocationId === undefined
+      ? base.activeLocationId
+      : String(input.activeLocationId || "").trim();
+    if (activeLocationId && !locations.has(activeLocationId)) errors.push("地点不在当前沙盒地图中");
+
+    const responsibleIdol = canonicalIdolName(input.responsibleIdol === undefined ? base.responsibleIdol : input.responsibleIdol);
+    if (!responsibleIdol || !availableIdols.has(responsibleIdol)) errors.push("负责偶像不在当前可用名单中");
+    const producedSource = input.producedIdols === undefined ? base.producedIdols : input.producedIdols;
+    const producedIdols = Array.from(new Set((Array.isArray(producedSource) ? producedSource : [])
+      .map(canonicalIdolName).filter(Boolean)));
+    producedIdols.forEach((name) => {
+      if (!availableIdols.has(name)) errors.push(`已制作偶像不在当前可用名单中：${name}`);
+    });
+    if (responsibleIdol && !producedIdols.includes(responsibleIdol)) producedIdols.unshift(responsibleIdol);
+
+    const stamina = numberValue("stamina", base.stamina, 0, 100);
+    const stress = numberValue("stress", base.stress, 0, 100);
+    const trustInput = input.affinity === undefined ? (input.trust === undefined ? base.affinity : input.trust) : input.affinity;
+    const affinity = numberValue("affinity", trustInput, 0, 100);
+    const Vo = numberValue("Vo", base.Vo, 0, 99999);
+    const Da = numberValue("Da", base.Da, 0, 99999);
+    const Vi = numberValue("Vi", base.Vi, 0, 99999);
+
+    const facilityKind = input.facilityKind === undefined ? base.facilityKind : (input.facilityKind || null);
+    if (facilityKind !== null && !["lesson", "training", "rest", "first_live"].includes(facilityKind)) {
+      errors.push("设施类型无效");
+    }
+    const statusAliases = { idle: "available", ready: "available" };
+    const firstLiveStatus = statusAliases[input.firstLiveStatus] || (input.firstLiveStatus === undefined ? base.firstLiveStatus : input.firstLiveStatus);
+    if (!["available", "generating", "recovery_required", "cooldown", "completed"].includes(firstLiveStatus)) {
+      errors.push("First Live 状态无效");
+    }
+
+    return {
+      ok: errors.length === 0,
+      value: errors.length === 0 ? {
+        postLiveDay,
+        clockMinutes,
+        activeLocationId,
+        responsibleIdol,
+        producedIdols,
+        stamina,
+        stress,
+        trust: affinity,
+        affinity,
+        Vo,
+        Da,
+        Vi,
+        openingComplete: input.openingComplete === undefined ? base.openingComplete : Boolean(input.openingComplete),
+        inviteComplete: input.inviteComplete === undefined ? base.inviteComplete : Boolean(input.inviteComplete),
+        secondIdolUnlocked: input.secondIdolUnlocked === undefined ? base.secondIdolUnlocked : Boolean(input.secondIdolUnlocked),
+        atApartment: input.atApartment === undefined ? base.atApartment : Boolean(input.atApartment),
+        facilityKind,
+        firstLiveStatus
+      } : null,
+      errors
+    };
+  }
+
+  function applySandboxConsoleDraft(currentState = state, draft = {}) {
+    const validation = validateSandboxConsoleDraft(draft, currentState);
+    if (!validation.ok) return { ok: false, state: currentState, errors: validation.errors };
+    const value = validation.value;
+    const roster = globalThis.HatsuIdolRoster;
+    if (value.responsibleIdol && value.responsibleIdol !== currentState.idol) {
+      if (roster) {
+        const sandboxState = currentState.sandbox && typeof currentState.sandbox === "object" ? currentState.sandbox : {};
+        const previousAssigned = Array.isArray(sandboxState.assignedIdols) ? [...sandboxState.assignedIdols] : null;
+        const previousResponsible = sandboxState.responsibleIdol;
+        const previousIdol = currentState.idol;
+        const assigned = new Set(roster.getAssignedIdols?.(currentState) || sandboxState.assignedIdols || []);
+        value.producedIdols.forEach((name) => assigned.add(name));
+        sandboxState.assignedIdols = [...assigned];
+        currentState.sandbox = sandboxState;
+        let switched = roster.switchResponsibleIdol?.(currentState, value.responsibleIdol);
+        if (!switched?.ok && roster.confirmAssignedIdol) {
+          const createProfile = typeof createFreshSandboxIdolProfile === "function"
+            ? (name) => createFreshSandboxIdolProfile(name)
+            : undefined;
+          switched = roster.confirmAssignedIdol(currentState, value.responsibleIdol, createProfile ? { createProfile } : {});
+        }
+        if (!switched?.ok) {
+          if (previousAssigned) sandboxState.assignedIdols = previousAssigned;
+          else delete sandboxState.assignedIdols;
+          sandboxState.responsibleIdol = previousResponsible;
+          currentState.idol = previousIdol;
+          return { ok: false, state: currentState, errors: ["无法切换负责偶像：该偶像尚未建立可用档案"] };
+        }
+      } else {
+        currentState.idol = value.responsibleIdol;
+      }
+    }
+    currentState.freeMode = {
+      ...(currentState.freeMode || {}),
+      postLiveDay: value.postLiveDay,
+      clockMinutes: value.clockMinutes,
+      activeLocationId: value.activeLocationId || null,
+      atApartment: value.atApartment,
+      facilityKind: value.facilityKind,
+      facilityLocationId: value.facilityKind ? (currentState.freeMode?.facilityLocationId || value.activeLocationId || null) : null
+    };
+    currentState.sandbox = {
+      ...(currentState.sandbox || {}),
+      responsibleIdol: value.responsibleIdol,
+      producedIdols: value.producedIdols,
+      openingComplete: value.openingComplete,
+      inviteComplete: value.inviteComplete,
+      secondIdolUnlocked: value.secondIdolUnlocked,
+      firstLiveChallenge: {
+        ...(currentState.sandbox?.firstLiveChallenge || {}),
+        status: value.firstLiveStatus
+      }
+    };
+    currentState.stamina = value.stamina;
+    currentState.stress = value.stress;
+    currentState.trust = value.trust;
+    currentState.Vo = value.Vo;
+    currentState.Da = value.Da;
+    currentState.Vi = value.Vi;
+    return { ok: true, state: currentState, errors: [] };
+  }
   const SANDBOX_ASARI_OPENING_STORY = `【初星正文开始】
 <story>
 <narration>午后的制作人科教室里，黑板上还留着上一节课的字迹。</narration>
@@ -915,6 +1105,15 @@
       theme: "linear-gradient(135deg, #167c80, #22324a)",
       iconText: "星",
       installed: true
+    },
+    {
+      id: "sandbox-console",
+      name: "沙盒控制台",
+      subtitle: "运行参数",
+      theme: "linear-gradient(135deg, #d7874f, #5c3145)",
+      iconText: "SC",
+      installed: true,
+      sandboxOnly: true
     }
   ];
 
@@ -19428,18 +19627,37 @@ ${buildChoiceOnlyExample(true)}`;
   }
 
   function openFreeChatOverlay() {
-    document.getElementById("freeChatPhaseBadge").textContent = getPhase();
-    document.getElementById("freeChatTextarea").value = "";
-    setElementHidden("freeChatOverlay", false);
-    document.getElementById("freeChatTextarea").focus();
+    setElementHidden("freeChatOverlay", true);
+    const eventOverlay = document.getElementById("eventOverlay");
+    const host = document.getElementById("vnBeatHost");
+    if (!eventOverlay || !host) return;
+    const present = () => {
+      setElementHidden("eventOverlay", false);
+      const container = document.getElementById("vnContainer");
+      if (container) container.style.display = "flex";
+      const classic = document.getElementById("vnClassicPanel");
+      if (classic) classic.style.display = "none";
+      const dialogueBox = document.getElementById("vnDialogueBox");
+      if (dialogueBox) dialogueBox.style.display = "none";
+      const choices = document.getElementById("vnChoicesOverlay");
+      if (choices) choices.style.display = "none";
+      host.hidden = false;
+      ensureKotoneBeatApp().then((chatApp) => {
+        if (!chatApp || eventOverlay.hidden) return;
+        chatApp.enterChatMode(state.idol || document.getElementById("chatIdolSelect")?.value || "");
+      }).catch((error) => {
+        console.warn("[Hatsu Produce] 无法初始化 Beat 闲聊舞台：", error);
+        const status = document.getElementById("chatStatus");
+        if (status) status.textContent = `3D 闲聊舞台加载失败：${error.message || error}`;
+      });
+    };
+    if (eventOverlay.hidden) triggerWipeTransition(present);
+    else present();
   }
 
   function closeFreeChatOverlay() {
     setElementHidden("freeChatOverlay", true);
-  }
-
-  function closeFreeChatOverlay() {
-    setElementHidden("freeChatOverlay", true);
+    if (!document.getElementById("eventOverlay")?.hidden && kotoneBeatApp?.chatState?.active) closeEventOverlay();
   }
 
   const daySummaryRadarAxes = [
@@ -19651,6 +19869,16 @@ ${buildChoiceOnlyExample(true)}`;
 
   // 底部功能栏“返回”：按当前所在的 app / 子视图逐级回退，最后回到主屏幕。
   function phoneNavBack() {
+    const sandboxConsoleApp = document.getElementById("phoneSandboxConsoleApp");
+    if (sandboxConsoleApp && !sandboxConsoleApp.hidden) {
+      const advancedView = document.getElementById("sandboxConsoleAdvancedView");
+      if (advancedView && !advancedView.hidden) {
+        setSandboxConsoleView("main");
+        return;
+      }
+      showPhoneHomeView();
+      return;
+    }
     const worldEngineApp = document.getElementById("phoneWorldEngineApp");
     if (worldEngineApp && !worldEngineApp.hidden) {
       const settingsView = document.getElementById("worldEngineSettingsView");
@@ -19722,7 +19950,7 @@ ${buildChoiceOnlyExample(true)}`;
     if (date) date.textContent = formatPhoneHomeDate();
     renderPhoneStatusBar();
 
-    const installedApps = phoneAppRegistry.filter((app) => app.installed);
+    const installedApps = phoneAppRegistry.filter((app) => app.installed && (!app.sandboxOnly || isSandboxLaunch()));
     const appIcons = installedApps.map(renderPhoneHomeAppIcon).join("");
     const emptySlot = `
       <div class="phone-app-slot phone-app-slot-empty" aria-hidden="true">
@@ -19734,12 +19962,169 @@ ${buildChoiceOnlyExample(true)}`;
     if (dock) dock.innerHTML = installedApps.slice(0, 4).map(renderPhoneHomeAppIcon).join("");
   }
 
+  let sandboxConsoleInited = false;
+  let sandboxConsoleDraftSnapshot = null;
+
+  function sandboxConsoleClockToInput(minutes) {
+    const value = Math.max(0, Number(minutes) || 0);
+    return `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(Math.floor(value % 60)).padStart(2, "0")}`;
+  }
+
+  function sandboxConsoleInputToClock(value) {
+    const match = String(value || "").match(/^(\d{1,2}):(\d{2})$/);
+    if (!match) return Number(state.freeMode?.clockMinutes) || 8 * 60;
+    return Number(match[1]) * 60 + Number(match[2]);
+  }
+
+  function setSandboxConsoleView(view = "main") {
+    const advanced = view === "advanced";
+    setElementHidden("sandboxConsoleMainView", advanced);
+    setElementHidden("sandboxConsoleAdvancedView", !advanced);
+  }
+
+  function setSandboxConsoleStatus(message = "", type = "") {
+    const status = document.getElementById("sandboxConsoleStatus");
+    const advancedStatus = document.getElementById("sandboxConsoleAdvancedStatus");
+    [status, advancedStatus].forEach((element) => {
+      if (!element) return;
+      element.textContent = message;
+      element.className = `sandbox-console-status${type ? ` is-${type}` : ""}`;
+    });
+  }
+
+  function renderSandboxConsoleProducedIdols(draft) {
+    const container = document.getElementById("sandboxConsoleProducedList");
+    if (!container) return;
+    const selected = new Set(draft.producedIdols || []);
+    container.innerHTML = getSandboxConsoleAvailableIdols(state).map((name) => `
+      <label class="sandbox-console-check-item">
+        <input type="checkbox" data-sandbox-produced-idol="${escapePhoneText(name)}" ${selected.has(name) ? "checked" : ""}>
+        <span>${escapePhoneText(name)}</span>
+      </label>
+    `).join("");
+  }
+
+  function renderSandboxConsole(draft = getSandboxConsoleDraft(state)) {
+    const app = document.getElementById("phoneSandboxConsoleApp");
+    if (!app || !isSandboxLaunch()) return;
+    const summary = document.getElementById("sandboxConsoleSummary");
+    const location = getSandboxConsoleLocations(state).find((item) => item.id === draft.activeLocationId);
+    if (summary) summary.textContent = `第 ${draft.postLiveDay} 天 · ${sandboxConsoleClockToInput(draft.clockMinutes)} · ${location?.name || "地图"}`;
+    const setValue = (id, value) => { const element = document.getElementById(id); if (element) element.value = value ?? ""; };
+    setValue("sandboxConsoleDay", draft.postLiveDay);
+    setValue("sandboxConsoleClock", sandboxConsoleClockToInput(draft.clockMinutes));
+    const locationSelect = document.getElementById("sandboxConsoleLocation");
+    if (locationSelect) {
+      locationSelect.innerHTML = `<option value="">返回地图</option>${getSandboxConsoleLocations(state).map((item) => `<option value="${escapePhoneText(item.id)}">${escapePhoneText(item.name)}</option>`).join("")}`;
+      locationSelect.value = draft.activeLocationId || "";
+    }
+    const responsibleSelect = document.getElementById("sandboxConsoleResponsible");
+    if (responsibleSelect) {
+      responsibleSelect.innerHTML = getSandboxConsoleAvailableIdols(state).map((name) => `<option value="${escapePhoneText(name)}">${escapePhoneText(name)}</option>`).join("");
+      responsibleSelect.value = draft.responsibleIdol || "";
+    }
+    setValue("sandboxConsoleStamina", draft.stamina);
+    setValue("sandboxConsoleStress", draft.stress);
+    setValue("sandboxConsoleTrust", draft.affinity);
+    setValue("sandboxConsoleVo", draft.Vo);
+    setValue("sandboxConsoleDa", draft.Da);
+    setValue("sandboxConsoleVi", draft.Vi);
+    renderSandboxConsoleProducedIdols(draft);
+    [
+      ["sandboxConsoleOpeningComplete", draft.openingComplete],
+      ["sandboxConsoleInviteComplete", draft.inviteComplete],
+      ["sandboxConsoleSecondIdolUnlocked", draft.secondIdolUnlocked],
+      ["sandboxConsoleAtApartment", draft.atApartment]
+    ].forEach(([id, checked]) => { const element = document.getElementById(id); if (element) element.checked = Boolean(checked); });
+    setValue("sandboxConsoleFacility", draft.facilityKind || "");
+    setValue("sandboxConsoleFirstLive", draft.firstLiveStatus || "available");
+    const notice = document.getElementById("sandboxConsoleRequestNotice");
+    if (notice) notice.hidden = !(pendingAiRequestId || state.pendingAiRequestId || state.harness?.activeTurn);
+  }
+
+  function getSandboxConsoleFormDraft() {
+    return {
+      postLiveDay: Number(document.getElementById("sandboxConsoleDay")?.value),
+      clockMinutes: sandboxConsoleInputToClock(document.getElementById("sandboxConsoleClock")?.value),
+      activeLocationId: document.getElementById("sandboxConsoleLocation")?.value || "",
+      responsibleIdol: document.getElementById("sandboxConsoleResponsible")?.value || "",
+      producedIdols: Array.from(document.querySelectorAll("#sandboxConsoleProducedList input[data-sandbox-produced-idol]:checked")).map((input) => input.dataset.sandboxProducedIdol),
+      stamina: Number(document.getElementById("sandboxConsoleStamina")?.value),
+      stress: Number(document.getElementById("sandboxConsoleStress")?.value),
+      affinity: Number(document.getElementById("sandboxConsoleTrust")?.value),
+      Vo: Number(document.getElementById("sandboxConsoleVo")?.value),
+      Da: Number(document.getElementById("sandboxConsoleDa")?.value),
+      Vi: Number(document.getElementById("sandboxConsoleVi")?.value),
+      openingComplete: Boolean(document.getElementById("sandboxConsoleOpeningComplete")?.checked),
+      inviteComplete: Boolean(document.getElementById("sandboxConsoleInviteComplete")?.checked),
+      secondIdolUnlocked: Boolean(document.getElementById("sandboxConsoleSecondIdolUnlocked")?.checked),
+      atApartment: Boolean(document.getElementById("sandboxConsoleAtApartment")?.checked),
+      facilityKind: document.getElementById("sandboxConsoleFacility")?.value || null,
+      firstLiveStatus: document.getElementById("sandboxConsoleFirstLive")?.value || "available"
+    };
+  }
+
+  function applySandboxConsoleForm() {
+    ensureStateShape();
+    const result = applySandboxConsoleDraft(state, getSandboxConsoleFormDraft());
+    if (!result.ok) {
+      setSandboxConsoleStatus(result.errors.join("；"), "error");
+      return false;
+    }
+    saveState("sandbox.console.apply");
+    render();
+    sandboxConsoleDraftSnapshot = clone(getSandboxConsoleDraft(state));
+    renderSandboxConsole(sandboxConsoleDraftSnapshot);
+    setSandboxConsoleStatus("已应用到当前沙盒存档。", "success");
+    return true;
+  }
+
+  function bindSandboxConsoleEvents() {
+    if (sandboxConsoleInited) return;
+    sandboxConsoleInited = true;
+    document.getElementById("sandboxConsoleDraftForm")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      applySandboxConsoleForm();
+    });
+    document.getElementById("sandboxConsoleAdvancedApplyBtn")?.addEventListener("click", applySandboxConsoleForm);
+    document.getElementById("sandboxConsoleUndoBtn")?.addEventListener("click", () => {
+      if (!sandboxConsoleDraftSnapshot) sandboxConsoleDraftSnapshot = clone(getSandboxConsoleDraft(state));
+      renderSandboxConsole(sandboxConsoleDraftSnapshot);
+      setSandboxConsoleStatus("已撤销本次编辑，尚未写入存档。", "info");
+    });
+    document.getElementById("sandboxConsoleAdvancedBtn")?.addEventListener("click", () => setSandboxConsoleView("advanced"));
+    document.getElementById("sandboxConsoleAdvancedBackBtn")?.addEventListener("click", () => setSandboxConsoleView("main"));
+    document.getElementById("sandboxConsoleRefreshWorldBtn")?.addEventListener("click", openPhoneWorldEngineApp);
+  }
+
+  function openSandboxConsoleApp() {
+    if (!isSandboxLaunch()) {
+      showToast("仅沙盒模式可用", "请先进入沙盒模式。", "warn");
+      return;
+    }
+    setElementHidden("phoneHomeView", true);
+    setElementHidden("phoneLineApp", true);
+    setElementHidden("phoneMusicApp", true);
+    setElementHidden("phoneBroadcastApp", true);
+    setElementHidden("phoneSnsApp", true);
+    setElementHidden("phoneWorldEngineApp", true);
+    setElementHidden("phoneSandboxConsoleApp", false);
+    setPhoneStatusBarMode("world-engine");
+    setPhoneNavBarVisible(true);
+    bindSandboxConsoleEvents();
+    sandboxConsoleDraftSnapshot = clone(getSandboxConsoleDraft(state));
+    setSandboxConsoleView("main");
+    setSandboxConsoleStatus("");
+    renderSandboxConsole(sandboxConsoleDraftSnapshot);
+  }
+
   function showPhoneLineAppShell() {
     setElementHidden("phoneHomeView", true);
     setElementHidden("phoneMusicApp", true);
     setElementHidden("phoneBroadcastApp", true);
     setElementHidden("phoneSnsApp", true);
     setElementHidden("phoneWorldEngineApp", true);
+    setElementHidden("phoneSandboxConsoleApp", true);
     setElementHidden("phoneLineApp", false);
     setPhoneStatusBarMode("line");
     setPhoneNavBarVisible(true);
@@ -19754,6 +20139,7 @@ ${buildChoiceOnlyExample(true)}`;
     setElementHidden("phoneBroadcastApp", true);
     setElementHidden("phoneSnsApp", true);
     setElementHidden("phoneWorldEngineApp", true);
+    setElementHidden("phoneSandboxConsoleApp", true);
     setElementHidden("phoneHomeView", false);
     setPhoneStatusBarMode("home");
     setPhoneNavBarVisible(false);
@@ -19778,6 +20164,8 @@ ${buildChoiceOnlyExample(true)}`;
       openPhoneSnsApp();
     } else if (appId === "world-engine") {
       openPhoneWorldEngineApp();
+    } else if (appId === "sandbox-console") {
+      openSandboxConsoleApp();
     }
   }
 
@@ -19835,6 +20223,7 @@ ${buildChoiceOnlyExample(true)}`;
     setElementHidden("phoneBroadcastApp", true);
     setElementHidden("phoneSnsApp", true);
     setElementHidden("phoneWorldEngineApp", true);
+    setElementHidden("phoneSandboxConsoleApp", true);
     setElementHidden("phoneMusicApp", false);
     setPhoneStatusBarMode("music");
     setPhoneNavBarVisible(true);
@@ -19974,6 +20363,7 @@ ${buildChoiceOnlyExample(true)}`;
     setElementHidden("phoneMusicApp", true);
     setElementHidden("phoneSnsApp", true);
     setElementHidden("phoneWorldEngineApp", true);
+    setElementHidden("phoneSandboxConsoleApp", true);
     setElementHidden("phoneBroadcastApp", false);
     setPhoneStatusBarMode("broadcast");
     setPhoneNavBarVisible(true);
@@ -20613,6 +21003,7 @@ ${buildChoiceOnlyExample(true)}`;
     setElementHidden("phoneMusicApp", true);
     setElementHidden("phoneBroadcastApp", true);
     setElementHidden("phoneWorldEngineApp", true);
+    setElementHidden("phoneSandboxConsoleApp", true);
     setElementHidden("phoneSnsApp", false);
     setPhoneStatusBarMode("sns");
     setPhoneNavBarVisible(true);
@@ -20648,6 +21039,7 @@ ${buildChoiceOnlyExample(true)}`;
     setElementHidden("phoneMusicApp", true);
     setElementHidden("phoneBroadcastApp", true);
     setElementHidden("phoneSnsApp", true);
+    setElementHidden("phoneSandboxConsoleApp", true);
     setElementHidden("phoneWorldEngineApp", false);
     setPhoneStatusBarMode("world-engine");
     setPhoneNavBarVisible(true);
@@ -25532,7 +25924,7 @@ ${outputContract("请写 900 字以内的完整校内傍晚场景，从抵达到
   async function ensureNiaLiveBeatPlayer() {
     if (niaLiveBeatPlayer) return niaLiveBeatPlayer;
     if (!niaLiveBeatPlayerLoad) {
-      const url = new URL("nia-live-beat-player.js?v=20261017-browser-cache-v1", window.HATSU_ASSET_BASE || document.baseURI).href;
+      const url = new URL("nia-live-beat-player.js?v=20261024-crowd-budget-v1", window.HATSU_ASSET_BASE || document.baseURI).href;
       niaLiveBeatPlayerLoad = import(url).then(({ NiaLiveBeatPlayer }) => {
         const stage = niaLiveEl("niaLiveBeatStage");
         const caption = niaLiveEl("niaLiveCaption");
@@ -26573,7 +26965,7 @@ ${outputContract("请写 900 字以内的完整校内傍晚场景，从抵达到
   async function ensureNiaRadioBeatPlayer() {
     if (niaRadioBeatPlayer) return niaRadioBeatPlayer;
     if (!niaRadioBeatPlayerLoad) {
-      const url = new URL("nia-radio-beat-player.js?v=20261017-browser-cache-v1", window.HATSU_ASSET_BASE || document.baseURI).href;
+      const url = new URL("nia-radio-beat-player.js?v=20261024-crowd-budget-v1", window.HATSU_ASSET_BASE || document.baseURI).href;
       niaRadioBeatPlayerLoad = import(url).then(({ NiaRadioBeatPlayer }) => {
         const stage = niaRadioEl("niaRadioBeatStage"), caption = niaRadioEl("niaRadioCaption");
         if (!stage || !caption) throw new Error("广播演出区域不可用");
@@ -26730,7 +27122,7 @@ ${outputContract("请写 900 字以内的完整校内傍晚场景，从抵达到
     if (niaTvBeatPlayer) return niaTvBeatPlayer;
     if (!niaTvBeatPlayerLoad) {
       const generation = niaTvBeatPlayerGeneration;
-      const url = new URL("nia-tv-beat-player.js?v=20261017-browser-cache-v1", window.HATSU_ASSET_BASE || document.baseURI).href;
+      const url = new URL("nia-tv-beat-player.js?v=20261024-crowd-budget-v1", window.HATSU_ASSET_BASE || document.baseURI).href;
       niaTvBeatPlayerLoad = import(url).then(({ NiaTvBeatPlayer }) => {
         if (generation !== niaTvBeatPlayerGeneration) throw new Error("电视演出已取消");
         const stage = niaRadioEl("niaRadioBeatStage"), caption = niaRadioEl("niaRadioCaption");
@@ -28598,7 +28990,7 @@ ${outputContract("请写 900 字以内的完整校内傍晚场景，从抵达到
   function ensureKotoneBeatApp() {
     if (kotoneBeatApp) return Promise.resolve(kotoneBeatApp);
     if (!kotoneBeatLoad) {
-      const url = new URL("../mmd-dialogue-stage/beat-player.js?v=20261017-browser-cache-v1", document.baseURI || window.location.href).href;
+      const url = new URL("../mmd-dialogue-stage/beat-player.js?v=20261024-crowd-budget-v1", document.baseURI || window.location.href).href;
       kotoneBeatLoad = import(url).then((mod) => {
         const host = document.getElementById("vnBeatHost");
         if (!host || typeof mod.BeatPlayerApp !== "function") return null;
@@ -30201,6 +30593,12 @@ ${outputContract("请写 900 字以内的完整校内傍晚场景，从抵达到
   }
 
   function closeEventOverlay() {
+    if (kotoneBeatApp?.chatState?.active) {
+      kotoneBeatApp.exitChatMode();
+      hideKotoneBeatStage();
+      setElementHidden("eventOverlay", true);
+      return;
+    }
     if (state.pendingActionContext?.action === "nia_inter_round_outing"
       && state.pendingActionContext?.actionContext?.phase === "result_ready"
       && !pendingAiRequestId) {
@@ -33549,8 +33947,16 @@ ${outputContract("请写 900 字以内的完整校内傍晚场景，从抵达到
     );
   }
 
+  function relayBeatChatHostPayload(payload) {
+    if (!payload || payload.source !== "hatsuboshi-produce-host") return;
+    if (!["character", "aiReplyCommitted", "primaryAiError"].includes(payload.type)) return;
+    // 闲聊现在与常规 Beat 一样在当前前端页面内实例化 BeatPlayerApp。
+    // 它自己的 createChatBridge 直接监听当前 window，无需再经过 iframe 转发。
+  }
+
   function routeHostAiPayload(payload) {
     if (!payload || payload.source !== "hatsuboshi-produce-host") return;
+    relayBeatChatHostPayload(payload);
     if (payload.type === "hostGenerationDebug") {
       aiBridgeDebug.hostGeneration = normalizeHostGenerationDebugSnapshot(payload.snapshot);
       refreshVnDebugView();

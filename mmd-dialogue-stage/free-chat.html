@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#eef3f5">
+  <title>初星闲聊</title>
+  <link rel="stylesheet" href="./beat-player.css?v=20261024-idle-chat-v2">
+  <link rel="stylesheet" href="./free-chat.css?v=20261024-tts-v1">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./vendor/three/build/three.module.js",
+        "three/addons/": "./vendor/three/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body class="free-chat">
+  <main class="beat-shell">
+    <header class="beat-header">
+      <div>
+        <p class="eyebrow">HATSUBOSHI / FREE CHAT</p>
+        <h1>初星闲聊</h1>
+        <p class="subtitle">直接在浏览器里和偶像闲聊。世界书和对话预设保存在这台设备，生成请求发给你填写的接口。</p>
+      </div>
+      <a class="back-link" href="./beat-player.html">返回 Beat 演出</a>
+    </header>
+
+    <section class="beat-layout">
+      <aside class="beat-editor" aria-label="闲聊">
+        <section id="chatEditorPanel" class="mode-panel chat-panel" aria-label="偶像闲聊">
+          <div class="panel-heading">
+            <div>
+              <span class="panel-kicker">IDOL CHAT</span>
+              <h2>和偶像闲聊</h2>
+            </div>
+            <span class="progress-pill">固定中景</span>
+          </div>
+          <label class="chat-field-label" for="chatIdolSelect">选择偶像</label>
+          <select id="chatIdolSelect" class="chat-select" aria-label="选择闲聊偶像">
+            <option value="kotone">藤田琴音</option>
+            <option value="hski">花海咲季</option>
+            <option value="ttmr">月村手毬</option>
+            <option value="hume">花海佑芽</option>
+            <option value="mao">有村麻央</option>
+            <option value="kcna">仓本千奈</option>
+            <option value="kllj">葛城莉莉娅</option>
+            <option value="ssmk">紫云清夏</option>
+            <option value="shro">筱泽广</option>
+            <option value="hrnm">姬崎莉波</option>
+            <option value="jsna">十王星南</option>
+            <option value="hmsz">秦谷美铃</option>
+            <option value="atbm">雨夜燕</option>
+          </select>
+          <details id="chatSettings" class="chat-settings">
+            <summary>接口、预设与世界书</summary>
+            <div class="chat-settings-body">
+              <label class="chat-field-label" for="chatApiBase">API 地址</label>
+              <input id="chatApiBase" class="chat-setting-input" type="url" placeholder="https://example.com/v1" autocomplete="off" spellcheck="false">
+              <div class="chat-settings-grid">
+                <div>
+                  <label class="chat-field-label" for="chatApiModel">模型</label>
+                  <input id="chatApiModel" class="chat-setting-input" type="text" placeholder="模型名" autocomplete="off" spellcheck="false">
+                </div>
+                <div>
+                  <label class="chat-field-label" for="chatApiKey">密钥</label>
+                  <input id="chatApiKey" class="chat-setting-input" type="password" placeholder="只保存在本机" autocomplete="off">
+                </div>
+              </div>
+              <div class="chat-settings-grid">
+                <div>
+                  <label class="chat-field-label" for="chatApiTemperature">温度</label>
+                  <input id="chatApiTemperature" class="chat-setting-input" type="number" min="0" max="2" step="0.1" value="0.8">
+                </div>
+                <div>
+                  <label class="chat-field-label" for="chatApiMaxTokens">最大输出</label>
+                  <input id="chatApiMaxTokens" class="chat-setting-input" type="number" min="64" max="4000" step="1" value="800">
+                </div>
+              </div>
+              <label class="chat-toggle" for="chatTtsEnabled">
+                <input id="chatTtsEnabled" type="checkbox">
+                <span>启用角色语音</span>
+              </label>
+              <label class="chat-field-label" for="chatTtsApiKey">Fish API Key</label>
+              <input id="chatTtsApiKey" class="chat-setting-input" type="password" placeholder="只保存在本机，与育成页共用" autocomplete="off">
+              <p id="chatTtsStatus" class="chat-settings-note" role="status">角色语音未接通。</p>
+              <label class="chat-field-label" for="chatSystemPrompt">对话预设</label>
+              <textarea id="chatSystemPrompt" class="chat-setting-text" spellcheck="false"></textarea>
+              <label class="chat-field-label" for="chatWorldbook">补充世界书</label>
+              <textarea id="chatWorldbook" class="chat-setting-text" spellcheck="false" placeholder="常驻：始终插入的设定&#10;---&#10;关键词：练习、课程&#10;命中任一关键词时插入的内容"></textarea>
+              <p id="chatWorldbookStatus" class="chat-settings-note" role="status">正在读取酒馆世界书「初星学园」。</p>
+              <p class="chat-settings-note">主世界书从酒馆的「初星学园」读取，不复制进页面。主键命中任一即可，次要关键词按酒馆逻辑过滤；扫描深度默认 2。好感度脚本只保留当前对白命中的分支。下方文本是额外补充。密钥不会写入页面源码。</p>
+            </div>
+          </details>
+          <p id="chatStatus" class="chat-status" role="status">进入场景后会先播放制作察觉动作，再回到默认待机。</p>
+          <div id="chatLog" class="chat-log" aria-live="polite">
+            <div class="chat-log-empty">选择偶像后，输入想说的话。</div>
+          </div>
+          <div class="chat-composer">
+            <label class="chat-field-label" for="chatInput">发送消息</label>
+            <textarea id="chatInput" rows="3" maxlength="1200" placeholder="例如：今天的练习顺利吗？" aria-label="闲聊输入"></textarea>
+            <div class="chat-composer-actions">
+              <button id="clearChatBtn" class="button secondary" type="button">清空这次对话</button>
+              <button id="sendChatBtn" class="button primary" type="button">发送</button>
+            </div>
+          </div>
+        </section>
+      </aside>
+
+      <section class="beat-player-panel" aria-label="3D 闲聊舞台">
+        <div id="beatStage" class="beat-stage" data-shot="keep" aria-label="3D 闲聊舞台">
+          <div id="beatBackground" class="beat-background" aria-hidden="true"></div>
+          <div class="stage-light stage-light-left"></div>
+          <div class="stage-light stage-light-right"></div>
+          <div class="stage-floor"></div>
+          <div class="stage-vignette"></div>
+          <div class="story-chrome">
+            <div id="beatDialogueCard" class="dialogue-card" tabindex="0" aria-label="对话框，点击或按回车进入下一段">
+              <img id="beatSpeakerPortrait" class="beat-speaker-portrait" hidden alt="" draggable="false">
+              <div class="speaker-plate"><strong id="beatSpeaker">等待播放</strong></div>
+              <p id="beatText">选择偶像后即可开始闲聊。</p>
+              <button id="advanceBeatBtn" class="dialogue-advance" type="button" aria-label="下一段"></button>
+            </div>
+            <div id="beatChoices" class="beat-choices" hidden>
+              <div id="beatChoiceList" class="beat-choice-list"></div>
+            </div>
+            <div class="player-toolbar">
+              <button id="previousBeatBtn" class="toolbar-button" type="button" aria-label="上一段"><span class="toolbar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M14.5 7.5 9 12l5.5 4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>上一段</span></button>
+              <button id="playBeatBtn" class="toolbar-button play" type="button" aria-pressed="false"><span class="toolbar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 7.5v9l8-4.5-8-4.5Z" fill="currentColor"/></svg></span><span class="toolbar-label">播放</span></button>
+              <button id="nextBeatBtn" class="toolbar-button" type="button" aria-label="下一段"><span class="toolbar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9.5 7.5 15 12l-5.5 4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>下一段</span></button>
+              <button id="stopBeatBtn" class="toolbar-button quiet" type="button"><span class="toolbar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="8" y="8" width="8" height="8" rx="1.2" fill="currentColor"/></svg></span><span>停止</span></button>
+              <label class="auto-toggle"><input id="beatAutoPlay" type="checkbox"><span class="toolbar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 8.5h5.2a3.2 3.2 0 0 1 0 6.4H9.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M10.2 12.2 8 14.9l2.4 2.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>自动</span></label>
+            </div>
+          </div>
+        </div>
+        <p class="beat-status-row"><span id="beatShot" class="shot-note">镜头：—</span><span id="beatStatus" class="beat-status" role="status">等待闲聊。</span></p>
+      </section>
+    </section>
+  </main>
+  <div class="free-chat-support">
+    <textarea id="beatScript"></textarea>
+    <span id="beatProgress"></span>
+    <ul id="beatDiagnostics"></ul>
+  </div>
+  <script src="../hatsu-produce-local/fish-tts.js?v=20261024-voice-map-v2"></script>
+    <script type="module" src="./free-chat.js?v=20261024-tts-v1"></script>
+</body>
+</html>

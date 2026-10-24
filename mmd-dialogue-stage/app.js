@@ -15,9 +15,9 @@ import { EXPRESSION_PRESETS, MOTION_BUCKETS, MOTION_FADE, buildPlaylist, classif
 import { LIBRARY_R2_KEY, LIBRARY_SOURCE_KEY, idolAssetUrls, libraryFileUrl, motionAssetUrls, motionAvailability, resolveLibrarySource, selectIdolModel, sourceLabel } from './library-client.js?v=20261017-browser-cache-v1';
 import { GAKUMAS_TEXTURE_KINDS, GAKUMAS_ACTIVE_TEXTURE_KINDS, selectMaterialTextures, textureDescriptor, textureUsesColorSpace, setTextureColorSpace } from './gakumas-materials.js?v=20261007-solo1-rampadd-v1';
 import { injectActorShader } from './gakumas-shader.js?v=20261004-key-view-v1';
-import { actorStencilState, classifyActorPass, placeCharacterShadowLight, shouldCastCharacterShadow, shouldReceiveCharacterShadow } from './gakumas-passes.js?v=20261003-hair-cover-fix-v16';
+import { actorStencilState, classifyActorPass, placeCharacterShadowLight, shouldCastCharacterShadow, shouldReceiveCharacterShadow } from './gakumas-passes.js?v=20261024-crowd-budget-v1';
 import { HairCoverStage } from './gakumas-hair-cover.js?v=20261005-hair-outline-v1';
-import { GakumasSceneStage } from './gakumas-scene.js?v=20261017-browser-cache-v1';
+import { GakumasSceneStage } from './gakumas-scene.js?v=20261023-activity-zones-v1';
 import { GakumasPostPass } from './gakumas-post.js?v=20261004-beat-taa-v2';
 import { GAKUMAS_LOOK, GakumasLookPass, applyGakumasLookUniforms, createGakumasLookUniformValues, matcapKeyDirection } from './gakumas-look.js?v=20261004-key-az60-v1';
 import { hasGakumasVertexColorAttribute } from './gakumas-outline.js?v=20260929-packed-color';

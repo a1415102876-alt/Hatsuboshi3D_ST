@@ -54,7 +54,16 @@ export const BEAT_OVERLAYS = BEAT_OVERLAY_CUE_IDS;
 export const BEAT_EFFECTS = BEAT_EFFECT_IDS;
 
 export const BEAT_SHOTS = Object.freeze(['wide', 'medium', 'close', 'reaction', 'keep']);
+export const BEAT_CAMERA_PRESETS = Object.freeze(['medium', 'close', 'side', 'two-shot', 'emphasis']);
+export const BEAT_CAMERA_MOTIONS = Object.freeze(['none', 'lower', 'raise', 'turn', 'push-in', 'pull-out']);
+export const BEAT_CAMERA_EASES = Object.freeze(['linear', 'out-sine', 'out-quad', 'in-out-sine']);
 export const BEAT_POSITIONS = Object.freeze(['left', 'center', 'right']);
+
+export function resolveBeatCameraPreset(value, shot = 'medium') {
+    const key = String(value || '').trim().toLowerCase();
+    if (BEAT_CAMERA_PRESETS.includes(key)) return key;
+    return ({ close: 'close', reaction: 'side', wide: 'medium' }[String(shot || '').trim().toLowerCase()] || 'medium');
+}
 
 export function stagePositionOffset(position) {
     return ({ left: -100 / 3, center: 0, right: 100 / 3 })[String(position || '').trim().toLowerCase()] ?? 0;

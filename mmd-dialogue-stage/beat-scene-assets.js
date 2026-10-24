@@ -1,6 +1,34 @@
 // Generated from normal Stage scenes with generic shots.
 export const BEAT_SCENE_ASSETS = Object.freeze([
   {
+    "name": "env_3d_home_classroom-00-00-evening",
+    "family": "env_3d_home_classroom-00-00",
+    "time": "evening",
+    "path": "scenes/env_3d_home_classroom-00-00-evening/scene.json",
+    "defaultLayout": "home-commu"
+  },
+  {
+    "name": "env_3d_home_classroom-00-00-morning",
+    "family": "env_3d_home_classroom-00-00",
+    "time": "morning",
+    "path": "scenes/env_3d_home_classroom-00-00-morning/scene.json",
+    "defaultLayout": "home-commu"
+  },
+  {
+    "name": "env_3d_home_classroom-00-00-night",
+    "family": "env_3d_home_classroom-00-00",
+    "time": "night",
+    "path": "scenes/env_3d_home_classroom-00-00-night/scene.json",
+    "defaultLayout": "home-commu"
+  },
+  {
+    "name": "env_3d_home_classroom-00-00-noon",
+    "family": "env_3d_home_classroom-00-00",
+    "time": "noon",
+    "path": "scenes/env_3d_home_classroom-00-00-noon/scene.json",
+    "defaultLayout": "home-commu"
+  },
+  {
     "name": "env_3d_adv_classroom-00-00-evening",
     "family": "env_3d_adv_classroom-00-00",
     "time": "evening",
