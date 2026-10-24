@@ -1,0 +1,16 @@
+# Cloudflare Workers 静态站点（初星育成前端）
+# 部署：npx wrangler deploy
+
+name = "hatsuboshitest"
+main = "worker.js"
+compatibility_date = "2026-06-29"
+
+# An optional Worker Secret can serve as a deployment-wide fallback. The
+# system console can also send its in-memory key through the proxy while
+# testing, so configuring a Secret is not required now:
+#   npx wrangler secret put FISH_AUDIO_API_KEY
+
+[assets]
+directory = "."
+binding = "ASSETS"
+not_found_handling = "single-page-application"

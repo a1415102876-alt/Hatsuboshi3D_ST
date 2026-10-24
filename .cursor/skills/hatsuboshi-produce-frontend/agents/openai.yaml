@@ -1,0 +1,4 @@
+interface:
+  display_name: "初星育成前端"
+  short_description: "初星育成前端与 SillyTavern 接入经验"
+  default_prompt: "Use $hatsuboshi-produce-frontend to continue building or debugging the Hatsuboshi produce frontend."
