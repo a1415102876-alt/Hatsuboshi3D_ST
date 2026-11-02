@@ -1,5 +1,5 @@
 import { installAuditionEmbed, auditionParentOrigin } from './audition-embed.js?v=20261017-audition-origin-v3';
-import { loadResourceLibrary, ResourceSession } from './asset-runtime.js?v=20261102-krnh-profile-v1';
+import { loadResourceLibrary, ResourceSession } from './asset-runtime.js?v=20261103-fktn-profile-r2-v1';
 import { buildAuditionAssetPlan } from './dialogue-asset-plan.js';
 let auditionResources = null;
 import * as THREE from 'three';

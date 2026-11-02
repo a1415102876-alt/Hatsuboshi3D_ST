@@ -1,14 +1,15 @@
-import { createSceneDirector } from './live-portrait.js?v=20261102-actor-pose-v1';
+import { createSceneDirector } from './live-portrait.js?v=20261103-fktn-profile-r2-v1';
 import { performanceRecommendations } from './performance-monitor-core.js?v=20261030-perf-diagnostic-v2';
 import { sceneIdolId } from './scene-protocol.js?v=20261102-krnh-3d-v1';
-import { buildStageSlides, parseBeatScript, resolveBeatCue } from './beat-protocol.js?v=20261102-actor-pose-v1';
+import { buildStageSlides, parseBeatScript, resolveBeatCue } from './beat-protocol.js?v=20261103-pose-move-v2';
+import { applyActorPose, applyCameraPose } from './scene-free-look.js?v=20261102-actor-pose-v1';
 import { BeatScenePool } from './beat-scene-pool.js?v=20261102-beat-camera-pose-v1';
 import { isBeatScene } from './beat-background-assets.js?v=20261029-bg-filename-v1';
 import { beatSpeakerStyle } from './beat-speaker-theme.js?v=20261007-speaker-colors-v1';
 import { BEAT_ACTOR_NAMES, BEAT_CUES, BEAT_EFFECTS, BEAT_FACES, BEAT_OVERLAYS, BEAT_POSITIONS, BEAT_SHOTS, BEAT_SPEAKER_NAMES, backgroundDepthBlur, backgroundPanAmount, backgroundPanPosition, beatActorId, beatBackgroundChanged, buildBackgroundPlan, estimateBeatHold, getShotPreset, plateCoverToBackground, preparedStageCovers, resolveBeatCameraPreset, resolveBeatShot, stagePlateCover, stagePositionOffset, zoomPlateCover } from './beat-player-core.js?v=20261102-krnh-3d-v1';
 import { BEAT_BACKGROUND_NAMES, backgroundAssetUrl, preloadBackgrounds } from './beat-backgrounds.js?v=20261017-browser-cache-v1';
 import { TtsLipSyncAnalyzer } from './tts-lip-sync.js?v=20261013-audio-talk-v3';
-import { loadResourceLibrary, ResourceSession } from './asset-runtime.js?v=20261102-krnh-profile-v1';
+import { loadResourceLibrary, ResourceSession } from './asset-runtime.js?v=20261103-fktn-profile-r2-v1';
 import { buildDialogueAssetPlan } from './dialogue-asset-plan.js?v=20261102-krnh-talk-idle-v1';
 import { createResourceLoading } from './resource-loading.js';
 import { ResourceBarrier } from './resource-barrier.js';
@@ -987,7 +988,55 @@ export class BeatPlayerApp {
         this.elements.stage.dataset.cameraZoom = cameraOptions.zoom || '';
         // `camera` and `shot` are one shared framing channel. Both the 2D plate
         // and the 3D scene receive the same effective value.
-        return this.scenePool.present(beat?.background || '', scenePlayer, cameraShot, focusedEntry?.position || 'center', cameraOptions) || !scene3d;
+        const presented = this.scenePool.present(beat?.background || '', scenePlayer, cameraShot, focusedEntry?.position || 'center', cameraOptions) || !scene3d;
+        this.startPoseMove(beat);
+        return presented;
+    }
+
+    stopPoseMove() {
+        if (this.poseMoveFrame) cancelAnimationFrame(this.poseMoveFrame);
+        this.poseMoveFrame = 0;
+        this.poseMoveToken = (this.poseMoveToken || 0) + 1;
+    }
+
+    startPoseMove(beat) {
+        this.stopPoseMove();
+        const cameraMove = beat?.cameraMove;
+        const actorMove = beat?.actorMove;
+        if (!cameraMove && !actorMove) return;
+        const player = this.scenePool?.activePlayer || null;
+        const camera = player?.camera || this.scenePool?.fallbackCamera || null;
+        const speakerId = beatActorId(beat?.speaker);
+        const entry = speakerId ? this.director.entries.get(speakerId) : null;
+        const model = entry?.player?.model || null;
+        const cameraReady = Boolean(camera && cameraMove?.from && cameraMove?.to);
+        const actorReady = Boolean(model && actorMove?.from && actorMove?.to);
+        if (!cameraReady && !actorReady) return;
+        const started = performance.now();
+        const token = this.poseMoveToken;
+        const ease = t => t * t * (3 - 2 * t);
+        const mix = (from, to, t) => from + (to - from) * t;
+        const mixPose = (from, to, t, keys) => Object.fromEntries(keys.map(key => [key, mix(from[key], to[key], t)]));
+        const apply = progress => {
+            if (cameraReady) applyCameraPose(camera, mixPose(cameraMove.from, cameraMove.to, progress.camera, ['x', 'y', 'z', 'yaw', 'pitch']));
+            if (actorReady) applyActorPose(model, mixPose(actorMove.from, actorMove.to, progress.actor, ['x', 'y', 'z', 'yaw']));
+        };
+        apply({ camera: 0, actor: 0 });
+        player?.renderFrame?.();
+        if (!player) this.scenePool?.renderBackground?.();
+        const tick = now => {
+            if (token !== this.poseMoveToken) return;
+            let pending = false;
+            const cameraT = cameraReady ? Math.min(1, (now - started) / (cameraMove.duration * 1000)) : 1;
+            const actorT = actorReady ? Math.min(1, (now - started) / (actorMove.duration * 1000)) : 1;
+            apply({ camera: ease(cameraT), actor: ease(actorT) });
+            if (cameraT < 1 || actorT < 1) pending = true;
+            player?.renderFrame?.();
+            if (!player) this.scenePool?.renderBackground?.();
+            if (pending) this.poseMoveFrame = requestAnimationFrame(tick);
+            else this.poseMoveFrame = 0;
+        };
+        this.poseMoveFrame = requestAnimationFrame(tick);
     }
 
     buildPreloadPlan(beats) {
@@ -1280,6 +1329,7 @@ export class BeatPlayerApp {
     }
 
     dispose() {
+        this.stopPoseMove();
         this.stop();
         this.resourceGeneration += 1;
         this.resources?.dispose();

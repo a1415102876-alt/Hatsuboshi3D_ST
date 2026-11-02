@@ -1,5 +1,5 @@
-import { BeatPlayerApp } from '../beat-player.js?v=20261102-actor-pose-v1';
-import { setLivePictureOptions } from '../live-portrait.js?v=20261102-actor-pose-v1';
+import { BeatPlayerApp } from '../beat-player.js?v=20261103-fktn-profile-r2-v1';
+import { setLivePictureOptions } from '../live-portrait.js?v=20261103-fktn-profile-r2-v1';
 import { beatActorId } from '../beat-player-core.js?v=20261102-krnh-3d-v1';
 import { advanceSandboxMinutes, applyStoryMinutes, buildSandboxSnapshot, createSandboxState, parseSandboxAdvance, parseSandboxClockSet, parseTimeMark, setSandboxClock, validateAction } from './sandbox-core.js?v=20261029-commission-v1';
 import { buildActionBeat, runSandboxAction } from './sandbox-beat.js';

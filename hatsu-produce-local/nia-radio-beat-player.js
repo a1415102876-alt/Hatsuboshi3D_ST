@@ -1,5 +1,5 @@
 import { beatActorId } from '../mmd-dialogue-stage/beat-player-core.js?v=20261102-krnh-3d-v1';
-import { NiaLiveBeatPlayer } from './nia-live-beat-player.js?v=20261102-actor-pose-v1';
+import { NiaLiveBeatPlayer } from './nia-live-beat-player.js?v=20261103-fktn-profile-r2-v1';
 import { buildNiaRadioBeatTimeline } from './nia-radio-beat-core.js?v=20261014-radio-beat-v1';
 
 export class NiaRadioBeatPlayer extends NiaLiveBeatPlayer {

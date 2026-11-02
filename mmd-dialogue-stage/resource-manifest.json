@@ -27761,8 +27761,7 @@
       "size": 497160,
       "hash": "56769799aff7f4bdf6ad01c4fd0a6fce5d5aaf0389338d171473d1978fab917d",
       "type": "application/json",
-      "local": "/mmd-dialogue-stage/secondary-motion-profiles/fktn-casl.json",
-      "delivery": "frontend"
+      "local": "/mmd-dialogue-stage/secondary-motion-profiles/fktn-casl.json"
     },
     "secondary-motion-profiles/fktn-casl.pre-step2-20261003.json": {
       "size": 442881,

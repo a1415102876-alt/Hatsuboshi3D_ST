@@ -45,7 +45,7 @@ import { configureGlbAnimationTarget, detectLivePortraitFormat } from './live-po
 import { bindGlbMorphTracks } from './glb-morph-tracks.js?v=20260929-face-primitives-v1';
 import { SecondaryMotion, applyHairRestRotationRebase, rebaseHairAnimationTracks, refreshRestInverseBinds } from './gakumas-secondary-motion.js?v=20261102-krnh-sleeve-gravity-v1';
 import { FacialEffectsStage } from './facial-effects-stage.js?v=20261017-browser-cache-v1';
-import { loadResourceLibrary } from './asset-runtime.js?v=20261102-krnh-profile-v1';
+import { loadResourceLibrary } from './asset-runtime.js?v=20261103-fktn-profile-r2-v1';
 import { filterPreferredSitItems } from './seated-posture.js?v=20261027-seated-rollback-v1';
 import { createPerformanceBucket, recordPerformanceSample, snapshotPerformanceBucket } from './performance-monitor-core.js?v=20261030-perf-diagnostic-v2';
 

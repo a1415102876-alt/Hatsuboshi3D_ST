@@ -1,8 +1,8 @@
-import { formatActorPose, formatCameraPose, parseActorPose, parseBeatScript, parseCameraPose } from './beat-protocol.js?v=20261102-actor-pose-v1';
+import { formatActorMove, formatActorPose, formatCameraMove, formatCameraPose, parseActorMove, parseActorPose, parseBeatScript, parseCameraMove, parseCameraPose } from './beat-protocol.js?v=20261103-pose-move-v2';
 
 const STANDARD_ATTRIBUTES = Object.freeze(new Set([
   'id', 'speaker', 'cue', 'face', 'overlay', 'effect', 'look', 'position',
-  'background', 'shot', 'wait', 'camera', 'camera-pose', 'actor-pose', 'camera-motion', 'camera-ease',
+  'background', 'shot', 'wait', 'camera', 'camera-pose', 'camera-move', 'actor-pose', 'actor-move', 'camera-motion', 'camera-ease',
   'camera-duration', 'costume',
 ]));
 
@@ -20,7 +20,9 @@ const FIELD_TO_ATTRIBUTE = Object.freeze({
   wait: 'wait',
   camera: 'camera',
   cameraPose: 'camera-pose',
+  cameraMove: 'camera-move',
   actorPose: 'actor-pose',
+  actorMove: 'actor-move',
   cameraMotion: 'camera-motion',
   cameraEase: 'camera-ease',
   cameraDuration: 'camera-duration',
@@ -125,9 +127,15 @@ function sanitizeBeat(beat, index = 0) {
     cameraPose: Object.hasOwn(source, 'cameraPose')
       ? parseCameraPose(source.cameraPose)
       : parseCameraPose(source.rawAttributes?.['camera-pose']),
+    cameraMove: Object.hasOwn(source, 'cameraMove')
+      ? parseCameraMove(source.cameraMove)
+      : parseCameraMove(source.rawAttributes?.['camera-move']),
     actorPose: Object.hasOwn(source, 'actorPose')
       ? parseActorPose(source.actorPose)
       : parseActorPose(source.rawAttributes?.['actor-pose']),
+    actorMove: Object.hasOwn(source, 'actorMove')
+      ? parseActorMove(source.actorMove)
+      : parseActorMove(source.rawAttributes?.['actor-move']),
     cameraMotion: trimText(source.cameraMotion),
     cameraEase: trimText(source.cameraEase),
     cameraDuration: Number.isFinite(Number(source.cameraDuration)) && Number(source.cameraDuration) > 0 ? Number(source.cameraDuration) : 0,
@@ -183,6 +191,14 @@ function rawAttributePatch(normalized, rawAttributes) {
       const formatted = formatActorPose(normalized.actorPose);
       if (formatted) result[attribute] = formatted;
       else delete result[attribute];
+    } else if (field === 'cameraMove') {
+      const formatted = formatCameraMove(normalized.cameraMove);
+      if (formatted) result[attribute] = formatted;
+      else delete result[attribute];
+    } else if (field === 'actorMove') {
+      const formatted = formatActorMove(normalized.actorMove);
+      if (formatted) result[attribute] = formatted;
+      else delete result[attribute];
     } else {
       const value = trimText(normalized[field]);
       if (value) result[attribute] = value;
@@ -198,7 +214,7 @@ function attributesText(beat, index) {
   values.id = trimText(beat.id) || makeId(index);
   values.speaker = trimText(beat.speaker);
   values.cue = trimText(beat.cue) || 'talk';
-  const preferredOrder = ['id', 'speaker', 'cue', 'face', 'overlay', 'effect', 'look', 'position', 'actor-pose', 'background', 'shot', 'wait', 'camera', 'camera-pose', 'camera-motion', 'camera-ease', 'camera-duration', 'costume'];
+  const preferredOrder = ['id', 'speaker', 'cue', 'face', 'overlay', 'effect', 'look', 'position', 'actor-pose', 'actor-move', 'background', 'shot', 'wait', 'camera', 'camera-pose', 'camera-move', 'camera-motion', 'camera-ease', 'camera-duration', 'costume'];
   const keys = [...new Set([...preferredOrder, ...Object.keys(values)])].filter(key => values[key] != null && values[key] !== '');
   return keys.map(key => `${key}="${escapeAttribute(values[key])}"`).join(' ');
 }

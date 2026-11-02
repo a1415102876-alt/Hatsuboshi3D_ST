@@ -1,39 +1,11 @@
 {
-  "generatedAt": "2026-11-02T14:28:46.931Z",
-  "files": 283,
-  "bytes": 64430411,
+  "generatedAt": "2026-11-02T17:45:40.081Z",
+  "files": 313,
+  "bytes": 68676725,
   "mediaChecked": 331,
   "mediaMissing": [
     {
       "path": "assets/hcg/Hiro/ref-character.png",
-      "status": 404
-    },
-    {
-      "path": "assets/hcg/Hiro/gakumas_00576_.png",
-      "status": 404
-    },
-    {
-      "path": "assets/hcg/Hiro/gakumas_00571_.png",
-      "status": 404
-    },
-    {
-      "path": "assets/hcg/Hiro/gakumas_00579_.png",
-      "status": 404
-    },
-    {
-      "path": "assets/hcg/Hiro/gakumas_00587_.png",
-      "status": 404
-    },
-    {
-      "path": "assets/hcg/Hiro/gakumas_00584_.png",
-      "status": 404
-    },
-    {
-      "path": "assets/hcg/Hiro/gakumas_00598_.png",
-      "status": 404
-    },
-    {
-      "path": "assets/hcg/Hiro/gakumas_00612_.png",
       "status": 404
     },
     {
@@ -45,7 +17,35 @@
       "status": 404
     },
     {
+      "path": "assets/hcg/Hiro/gakumas_00576_.png",
+      "status": 404
+    },
+    {
+      "path": "assets/hcg/Hiro/gakumas_00579_.png",
+      "status": 404
+    },
+    {
+      "path": "assets/hcg/Hiro/gakumas_00571_.png",
+      "status": 404
+    },
+    {
+      "path": "assets/hcg/Hiro/gakumas_00587_.png",
+      "status": 404
+    },
+    {
+      "path": "assets/hcg/Hiro/gakumas_00598_.png",
+      "status": 404
+    },
+    {
+      "path": "assets/hcg/Hiro/gakumas_00612_.png",
+      "status": 404
+    },
+    {
       "path": "assets/hcg/Hiro/gakumas_00608_.png",
+      "status": 404
+    },
+    {
+      "path": "assets/hcg/Hiro/gakumas_00568_.png",
       "status": 404
     },
     {
@@ -57,7 +57,7 @@
       "status": 404
     },
     {
-      "path": "assets/novel-standees/Ume_Standees_Altered/e5184708-4603-499b-9c8c-f5bed828e5d0.png",
+      "path": "assets/novel-standees/Ume_Standees_Altered/7a948476-4a13-43f8-9daa-59e846c04f26.png",
       "status": 404
     },
     {
@@ -65,49 +65,53 @@
       "status": 404
     },
     {
-      "path": "assets/novel-standees/Ume_Standees_Altered/7a948476-4a13-43f8-9daa-59e846c04f26.png",
+      "path": "assets/novel-standees/Ume_Standees_Altered/e5184708-4603-499b-9c8c-f5bed828e5d0.png",
       "status": 404
     }
   ],
   "mediaUnverified": [
     {
-      "path": "assets/MAP/Gakuen.png",
+      "path": "assets/hcg/Hiro/gakumas_00584_.png",
       "status": 0
     },
     {
-      "path": "assets/MAP/Student_Store.png",
+      "path": "assets/avatars/shirakusa-tsukika.png",
       "status": 0
     },
     {
-      "path": "assets/hcg/Hiro/gakumas_00568_.png",
+      "path": "assets/novel-standees/Ume_Standees_Altered/stern_question.png",
       "status": 0
     },
     {
-      "path": "assets/hcg/saki/doggy_v01.png",
+      "path": "assets/novel-standees/shinosawa-hiro.png",
       "status": 0
     },
     {
-      "path": "assets/hcg/saki/missionary_v01.png",
+      "path": "assets/scenes/Cafeteria.png",
       "status": 0
     },
     {
-      "path": "assets/novel-standees/kuramoto-china.png",
+      "path": "assets/scenes/Burger_Shop.png",
       "status": 0
     },
     {
-      "path": "assets/novel-standees/Hiro_Standees_Altered/neutral_standby.png",
+      "path": "assets/scenes/Saki_Bedroom.png",
       "status": 0
     },
     {
-      "path": "assets/novel-standees/Hiro_Standees_Altered/soft_smile.png",
+      "path": "assets/scenes/Recording_Room.png",
       "status": 0
     },
     {
-      "path": "assets/scenes/MerryGoRound.png",
+      "path": "assets/scenes/OutStage.png",
       "status": 0
     },
     {
-      "path": "assets/scenes/Hiro_NIA_Episode20_Sunset.png",
+      "path": "assets/scenes/Student_Council.png",
+      "status": 0
+    },
+    {
+      "path": "assets/scenes/campus.png",
       "status": 0
     }
   ]

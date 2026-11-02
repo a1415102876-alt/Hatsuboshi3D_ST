@@ -370,6 +370,16 @@ export function parseBeatScript(source, options = {}) {
             addError(errors, 'invalid-actor-pose', 'actor-pose 需要 x,y,z,朝向 四个数字，已忽略。', openIndex, beatId);
         }
         if (actorPose) beat.actorPose = actorPose;
+        const cameraMove = parseCameraMove(attributes['camera-move']);
+        if (String(attributes['camera-move'] || '').trim() && !cameraMove) {
+            addError(errors, 'invalid-camera-move', 'camera-move 需要起点 x,y,z,水平角,俯仰角，终点 x,y,z,水平角,俯仰角，以及秒数，已忽略。', openIndex, beatId);
+        }
+        if (cameraMove) beat.cameraMove = cameraMove;
+        const actorMove = parseActorMove(attributes['actor-move']);
+        if (String(attributes['actor-move'] || '').trim() && !actorMove) {
+            addError(errors, 'invalid-actor-move', 'actor-move 需要起点 x,y,z,朝向，终点 x,y,z,朝向，以及秒数，已忽略。', openIndex, beatId);
+        }
+        if (actorMove) beat.actorMove = actorMove;
         beats.push(beat);
         previousLook = look;
         previousShot = shot;
@@ -428,6 +438,58 @@ export function formatActorPose(pose) {
     return [parsed.x, parsed.y, parsed.z, parsed.yaw]
         .map(value => String(Math.round(value * 1000) / 1000))
         .join(',');
+}
+
+function roundMoveNumber(value) {
+    return String(Math.round(value * 1000) / 1000);
+}
+
+function clampMovePitch(pitch) {
+    return Math.min(80, Math.max(-80, pitch));
+}
+
+function cameraMovePose(parts) {
+    const [x, y, z, yaw, pitch] = parts;
+    return { x, y, z, yaw, pitch: clampMovePitch(pitch) };
+}
+
+export function parseCameraMove(value) {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+        const from = value.from || {};
+        const to = value.to || {};
+        return parseCameraMove([from.x, from.y, from.z, from.yaw, from.pitch, to.x, to.y, to.z, to.yaw, to.pitch, value.duration].join(','));
+    }
+    const parts = String(value || '').split(',').map(part => Number(String(part).trim()));
+    if (parts.length !== 11 || parts.some(part => !Number.isFinite(part)) || parts[10] <= 0) return null;
+    return { from: cameraMovePose(parts.slice(0, 5)), to: cameraMovePose(parts.slice(5, 10)), duration: parts[10] };
+}
+
+export function formatCameraMove(move) {
+    const parsed = parseCameraMove(move);
+    if (!parsed) return '';
+    return [parsed.from.x, parsed.from.y, parsed.from.z, parsed.from.yaw, parsed.from.pitch, parsed.to.x, parsed.to.y, parsed.to.z, parsed.to.yaw, parsed.to.pitch, parsed.duration].map(roundMoveNumber).join(',');
+}
+
+function actorMovePose(parts) {
+    const [x, y, z, yaw] = parts;
+    return { x, y, z, yaw };
+}
+
+export function parseActorMove(value) {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+        const from = value.from || {};
+        const to = value.to || {};
+        return parseActorMove([from.x, from.y, from.z, from.yaw, to.x, to.y, to.z, to.yaw, value.duration].join(','));
+    }
+    const parts = String(value || '').split(',').map(part => Number(String(part).trim()));
+    if (parts.length !== 9 || parts.some(part => !Number.isFinite(part)) || parts[8] <= 0) return null;
+    return { from: actorMovePose(parts.slice(0, 4)), to: actorMovePose(parts.slice(4, 8)), duration: parts[8] };
+}
+
+export function formatActorMove(move) {
+    const parsed = parseActorMove(move);
+    if (!parsed) return '';
+    return [parsed.from.x, parsed.from.y, parsed.from.z, parsed.from.yaw, parsed.to.x, parsed.to.y, parsed.to.z, parsed.to.yaw, parsed.duration].map(roundMoveNumber).join(',');
 }
 
 export function resolveBeatCue(cue, face = '') {

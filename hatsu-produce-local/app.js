@@ -25925,7 +25925,7 @@ ${outputContract("请写 900 字以内的完整校内傍晚场景，从抵达到
   async function ensureNiaLiveBeatPlayer() {
     if (niaLiveBeatPlayer) return niaLiveBeatPlayer;
     if (!niaLiveBeatPlayerLoad) {
-      const url = new URL("nia-live-beat-player.js?v=20261102-actor-pose-v1", window.HATSU_ASSET_BASE || document.baseURI).href;
+      const url = new URL("nia-live-beat-player.js?v=20261103-fktn-profile-r2-v1", window.HATSU_ASSET_BASE || document.baseURI).href;
       niaLiveBeatPlayerLoad = import(url).then(({ NiaLiveBeatPlayer }) => {
         const stage = niaLiveEl("niaLiveBeatStage");
         const caption = niaLiveEl("niaLiveCaption");
@@ -26966,7 +26966,7 @@ ${outputContract("请写 900 字以内的完整校内傍晚场景，从抵达到
   async function ensureNiaRadioBeatPlayer() {
     if (niaRadioBeatPlayer) return niaRadioBeatPlayer;
     if (!niaRadioBeatPlayerLoad) {
-      const url = new URL("nia-radio-beat-player.js?v=20261027-seated-posture-v1", window.HATSU_ASSET_BASE || document.baseURI).href;
+      const url = new URL("nia-radio-beat-player.js?v=20261103-fktn-profile-r2-v1", window.HATSU_ASSET_BASE || document.baseURI).href;
       niaRadioBeatPlayerLoad = import(url).then(({ NiaRadioBeatPlayer }) => {
         const stage = niaRadioEl("niaRadioBeatStage"), caption = niaRadioEl("niaRadioCaption");
         if (!stage || !caption) throw new Error("广播演出区域不可用");
@@ -27123,7 +27123,7 @@ ${outputContract("请写 900 字以内的完整校内傍晚场景，从抵达到
     if (niaTvBeatPlayer) return niaTvBeatPlayer;
     if (!niaTvBeatPlayerLoad) {
       const generation = niaTvBeatPlayerGeneration;
-      const url = new URL("nia-tv-beat-player.js?v=20261027-seated-posture-v1", window.HATSU_ASSET_BASE || document.baseURI).href;
+      const url = new URL("nia-tv-beat-player.js?v=20261103-fktn-profile-r2-v1", window.HATSU_ASSET_BASE || document.baseURI).href;
       niaTvBeatPlayerLoad = import(url).then(({ NiaTvBeatPlayer }) => {
         if (generation !== niaTvBeatPlayerGeneration) throw new Error("电视演出已取消");
         const stage = niaRadioEl("niaRadioBeatStage"), caption = niaRadioEl("niaRadioCaption");
@@ -29053,7 +29053,7 @@ ${outputContract("请写 900 字以内的完整校内傍晚场景，从抵达到
   function ensureKotoneBeatApp() {
     if (kotoneBeatApp) return Promise.resolve(kotoneBeatApp);
     if (!kotoneBeatLoad) {
-      const url = new URL("../mmd-dialogue-stage/beat-player.js?v=20261102-actor-pose-v1", document.baseURI || window.location.href).href;
+      const url = new URL("../mmd-dialogue-stage/beat-player.js?v=20261103-fktn-profile-r2-v1", document.baseURI || window.location.href).href;
       kotoneBeatLoad = import(url).then((mod) => {
         const host = document.getElementById("vnBeatHost");
         if (!host || typeof mod.BeatPlayerApp !== "function") return null;
