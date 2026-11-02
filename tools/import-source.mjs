@@ -27,7 +27,7 @@ for(const dir of ['hatsu-produce-local','mmd-dialogue-stage']){
  }
  const dirs=dir==='hatsu-produce-local'
   ?['appearance','broadcast','chronicle','nia','sandbox','shop','tasks','world','UI']
-  :['vendor','ui','assets/loading-background'];
+  :['sandbox','vendor','ui','assets/loading-background'];
  for(const rel of dirs)await copyTree(path.join(src,rel),dir+'/'+rel);
 }
 
