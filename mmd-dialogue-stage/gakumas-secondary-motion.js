@@ -132,7 +132,9 @@ export function gravityScaleForSpring(record, table = null, tuning = DEFAULT_SEC
             ? 'backHair'
             : null;
     const groupScale = group ? table?.gravityScaleByBoneGroup?.[group] : null;
-    return base * (groupScale != null && Number.isFinite(Number(groupScale)) ? Number(groupScale) : 1);
+    const grouped = base * (groupScale != null && Number.isFinite(Number(groupScale)) ? Number(groupScale) : 1);
+    const boneScale = table?.gravityScaleByBone?.[name];
+    return grouped * (boneScale != null && Number.isFinite(Number(boneScale)) ? Number(boneScale) : 1);
 }
 
 export function pendulumGravityFactor(record, tailRecord = null, table = null) {
@@ -2434,6 +2436,8 @@ export class SecondaryMotion {
         this.table = table;
         this.tuning = { ...DEFAULT_SECONDARY_TUNING };
         this.bindings = [];
+        this.bindingByBone = new Map();
+        this.bindingByTarget = new Map();
         this.springs = [];
         this.colliders = [];
         this.chains = [];
@@ -2512,6 +2516,8 @@ export class SecondaryMotion {
         const springRecords = new Map((this.table.springs || []).map(record => [record.bone, record]));
         this.missing = [];
         this.bindings = [];
+        this.bindingByBone = new Map();
+        this.bindingByTarget = new Map();
         this.springs = [];
         this.colliders = [];
         this.chains = [];
@@ -2566,6 +2572,11 @@ export class SecondaryMotion {
                 restPosition: localPositionOf(target.bone, target),
             });
         }
+        // Jacket3 drivers reuse the matching skirt anchor's computed delta.
+        // Index once at bind time so the per-tick Quartz pass stays linear in
+        // the number of drivers instead of rescanning every binding.
+        this.bindingByBone = new Map(this.bindings.map(binding => [binding.driver.bone, binding]));
+        this.bindingByTarget = new Map(this.bindings.map(binding => [binding.target.bone, binding]));
         const skirtRootFollow = this.table.nativeSkirtRootFollow;
         if (skirtRootFollow && typeof skirtRootFollow === 'object' && !Array.isArray(skirtRootFollow)) {
             for (const [targetName, sourceName] of Object.entries(skirtRootFollow)) {
@@ -2969,13 +2980,18 @@ export class SecondaryMotion {
         writePose(this.animationPose);
     }
 
-    update(delta = 1 / 60) {
+    update(delta = 1 / 60, options = {}) {
         this.runtime.renderFrames += 1;
         if (!this.enabled) {
             this.#restoreRest();
             this.reset();
             return;
         }
+        const requestedMaxSteps = Number(options?.maxFixedSteps);
+        const maxFixedSteps = Number.isFinite(requestedMaxSteps)
+            ? Math.max(1, Math.min(6, Math.floor(requestedMaxSteps)))
+            : 6;
+        const dropRemainder = options?.dropRemainder === true;
         const renderDelta = Number.isFinite(Number(delta)) ? Math.max(0, Number(delta)) : NATIVE_FIXED_STEP;
         this.lastRenderDelta = renderDelta;
         this.runtime.lastDelta = renderDelta;
@@ -3033,7 +3049,7 @@ export class SecondaryMotion {
         let elapsed = this.fixedRemainder + clampedDelta;
         let nextTick = NATIVE_FIXED_STEP - this.fixedRemainder;
         let stepCount = 0;
-        while (elapsed + 1e-7 >= NATIVE_FIXED_STEP && stepCount < 6) {
+        while (elapsed + 1e-7 >= NATIVE_FIXED_STEP && stepCount < maxFixedSteps) {
             const fraction = clampAxis(nextTick / clampedDelta, 0, 1);
             const tickInput = blendPose(this.fixedPreviousInput, this.fixedCurrentInput, fraction);
             writePose(tickInput);
@@ -3045,7 +3061,10 @@ export class SecondaryMotion {
             nextTick += NATIVE_FIXED_STEP;
             stepCount += 1;
         }
-        this.fixedRemainder = Math.max(0, elapsed);
+        // Background actors can intentionally trade temporal fidelity for CPU
+        // time. In that mode the caller asks for one fixed step and drops the
+        // accumulated catch-up debt instead of replaying every skipped tick.
+        this.fixedRemainder = dropRemainder ? 0 : Math.max(0, elapsed);
         this.fixedPreviousInput = input;
         writePose(input);
         this.#applyQuartz();
@@ -3228,7 +3247,7 @@ export class SecondaryMotion {
                     : recoveredSkirtDriverQuaternion(relative, driver.setting, skirtDriverSwingSigns(this.table, driver.bone)))
                 : skirtDriverQuaternion(relative, driver.setting, side, outer);
             if (/Jacket3_S$/.test(driver.bone || '')) {
-                const skirtExtra = this.bindings.find(item => item.driver.bone === jacketSkirtAnchor(driver.bone))?.extra;
+                    const skirtExtra = this.bindingByBone.get(jacketSkirtAnchor(driver.bone))?.extra;
                 extra = scaleFollowExtra(skirtExtra || extra, JACKET_FOLLOW_WEIGHT);
                 binding.extra = extra;
             } else {
@@ -3747,14 +3766,14 @@ export class SecondaryMotion {
         };
         const rendered = predict(next);
         const renderedRest = restTail ? predict(restTail) : null;
-        const result = this.#resolveStaticCollisionsAt(item, rendered, worldColliders, renderedRest, null, traceKey, false, originOverride);
+        const result = this.#resolveStaticCollisionsAt(item, rendered, worldColliders, renderedRest, null, traceKey, false, originOverride, predict(item.current));
         if (!result.collided) return { next, collided: false };
         const corrected = tailFromRenderedCorrection(origin, next, rendered, result.next, item.restLength);
         if (traceBone) traceBone[traceKey] = [...corrected];
         return { next: corrected, collided: true };
     }
 
-    #resolveStaticCollisionsAt(item, next, worldColliders, restTail, traceBone, traceKey = 'afterCollision', keepLength = true, originOverride = null) {
+    #resolveStaticCollisionsAt(item, next, worldColliders, restTail, traceBone, traceKey = 'afterCollision', keepLength = true, originOverride = null, contactHistory = item.current) {
         const dynamicRecord = nativeDynamicSpringRecord(item);
         // ActorAnimationSwingSolver does not use the dynamic collider enum to
         // disable static-body checks. A child setting with type 4 still
@@ -3791,7 +3810,15 @@ export class SecondaryMotion {
             if (isHairVolumeCollider(collider.record)) {
                 next = resolveCapsuleInside(next, clothRadius, collider.start, collider.end, collider.radiusA, collider.radiusB);
             } else {
-                next = resolveCapsuleKeepSide(next, clothRadius, collider.start, collider.end, collider.radiusA, collider.radiusB, restTail);
+                // Stage adaptation, enabled per profile: a moving hand can cross
+                // the authored rest side while holding a braid. Using that side
+                // flips the contact normal repeatedly. Keep the last rendered
+                // particle's side instead; reset() initializes it at the new pose.
+                // Both references must be in the same endpoint/world basis.
+                const useHistory = HAIR_BONE_NAME.test(item.record.bone || '')
+                    && this.table.hairContactHistoryColliders?.includes(collider.record.bone);
+                const side = useHistory && contactHistory?.every(Number.isFinite) ? contactHistory : restTail;
+                next = resolveCapsuleKeepSide(next, clothRadius, collider.start, collider.end, collider.radiusA, collider.radiusB, side);
             }
             const correction = vecLength(sub(next, beforeCollider));
             if (correction > 1e-7) {
@@ -3986,7 +4013,7 @@ export class SecondaryMotion {
                 ? quatSlerp([0, 0, 0, 1], item.record.initialRotationOffset, clampAxis(item.record.initialRotationWeight ?? 1, 0, 1))
                 : null;
         const base = offset ? composeRestAndQuat(rest, offset) : rest;
-        const extra = this.bindings.find(binding => binding.target.bone === item.entry.bone)?.extra;
+        const extra = this.bindingByTarget.get(item.entry.bone)?.extra;
         return extra ? composeRestAndQuat(base, extra) : base;
     }
 

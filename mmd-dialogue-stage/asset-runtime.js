@@ -9,7 +9,7 @@ async function json(url) {
     return response.json();
 }
 export function loadResourceLibrary() {
-    libraryPromise ||= Promise.all(['library.json?v=20261016-cache', 'gakumas-motion-map.json?v=20261016-cache', 'resource-manifest.json?v=20261016-cache']
+    libraryPromise ||= Promise.all(['library.json?v=20261016-cache', 'gakumas-motion-map.json?v=20261016-cache', 'resource-manifest.json?v=20261102-krnh-profile-v1']
         .map(name => json(new URL(name, ROOT)))).then(([config, map, manifest]) => ({ config, map, manifest, status: manifest.status }))
         .catch(error => { libraryPromise = null; throw error; });
     return libraryPromise;
@@ -44,10 +44,17 @@ export class ResourceSession {
     }
     key(url) { return canonicalResourceKey(url, this.config, this.base); }
     urlFor(item) {
+        // Small versioned fixes can ship with the frontend while large assets
+        // remain on R2. The content hash also invalidates the browser HTTP cache.
+        if (item.delivery === 'frontend') {
+            const url = new URL(item.local, this.base);
+            url.searchParams.set('v', item.hash);
+            return url.href;
+        }
         const source = resolveLibrarySource(this.config, { source: this.config.source, r2Base: this.config.r2?.baseUrl });
         return source.usingR2 ? `${source.base}/${item.key.split('/').map(encodeURIComponent).join('/')}` : new URL(item.local, this.base).href;
     }
-    async prepare(keys) {
+    async prepare(keys, { extend = false } = {}) {
         const selected = new Set();
         const add = key => {
             if (selected.has(key)) return;
@@ -56,11 +63,37 @@ export class ResourceSession {
             selected.add(key); (row.deps || []).forEach(add);
         };
         keys.forEach(add);
-        this.items = [...selected].map(key => ({ key, ...this.manifest.assets[key] }));
+        const items = [...selected].map(key => ({ key, ...this.manifest.assets[key] }));
+        const concurrency = /Android|iPhone|iPad|Mobile/i.test(globalThis.navigator?.userAgent || '') ? 2 : 4;
+        if (extend && !this.disposed && this.urls?.size) {
+            const union = [...new Map([...(this.items || []), ...items].map(item => [item.key, item])).values()];
+            const nextUnpin = this.store.pin(union);
+            this.unpin?.();
+            this.unpin = nextUnpin;
+            this.items = union;
+            const missing = items.filter(item => !this.urls.has(item.key));
+            if (!missing.length) return this;
+            const { results, progress } = await this.store.prefetch(missing.map(item => ({ ...item, url: this.urlFor(item) })), {
+                signal: this.controller.signal,
+                onProgress: progress => {
+                    if (progress.phase === 'downloading' && progress.downloadBytes > 0) this.onProgress(progress);
+                },
+                concurrency,
+            });
+            if (this.disposed) throw new DOMException('资源加载已取消', 'AbortError');
+            for (const [key, { blob }] of results) {
+                if (this.urls.has(key)) continue;
+                this.blobs.set(key, blob);
+                this.urls.set(key, URL.createObjectURL(blob));
+            }
+            this.progress = progress;
+            return this;
+        }
+        this.items = items;
         this.unpin?.(); this.unpin = this.store.pin(this.items);
         const { results, progress } = await this.store.prefetch(this.items.map(item => ({ ...item, url: this.urlFor(item) })), {
             signal: this.controller.signal, onProgress: this.onProgress,
-            concurrency: /Android|iPhone|iPad|Mobile/i.test(globalThis.navigator?.userAgent || '') ? 2 : 4,
+            concurrency,
         });
         if (this.disposed) throw new DOMException('资源加载已取消', 'AbortError');
         for (const [key, { blob }] of results) {

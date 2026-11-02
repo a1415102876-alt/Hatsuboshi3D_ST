@@ -254,6 +254,14 @@ function clampToRect(x, z, rect, radius) {
     ];
 }
 
+// Coarse boxes currently cover authored standing points. Keep the generated
+// data, but do not let it move actors or block paths until the boxes are reviewed.
+const ACTIVITY_BLOCK_BOXES_ENABLED = false;
+
+function blockingBoxes(activity) {
+    return ACTIVITY_BLOCK_BOXES_ENABLED ? (activity?.forbiddenAreas || []) : [];
+}
+
 function insideBox(x, z, box, radius = 0) {
     const pad = (box.padding || 0) + radius;
     return Math.abs(x - box.center[0]) <= box.size[0] / 2 + pad
@@ -541,7 +549,7 @@ export function pointInWalkable(activity, point, radius = 0) {
     const areas = activity?.walkableAreas || [];
     const inside = areas.some(area => pointInPolygon(x, z, area.polygon) && (radius <= 0 || distanceToPolygon(x, z, area.polygon) + 1e-6 >= radius));
     if (!inside) return false;
-    return !(activity?.forbiddenAreas || []).some(box => insideBox(x, z, box, radius));
+    return !blockingBoxes(activity).some(box => insideBox(x, z, box, radius));
 }
 
 function segmentHitsRect(x0, z0, x1, z1, minX, minZ, maxX, maxZ) {
@@ -575,7 +583,7 @@ export function segmentHitsBox(from, to, box, radius = 0) {
 
 export function pathIsClear(activity, from, to, radius = 0.35) {
     if (!pointInWalkable(activity, from, radius) || !pointInWalkable(activity, to, radius)) return false;
-    return !(activity.forbiddenAreas || []).some(box => segmentHitsBox(from, to, box, radius));
+    return !blockingBoxes(activity).some(box => segmentHitsBox(from, to, box, radius));
 }
 
 export function nearestSafePoint(activity, point, radius = 0.35) {
@@ -592,7 +600,7 @@ export function nearestSafePoint(activity, point, radius = 0.35) {
         return [round((bounds.minX + bounds.maxX) / 2, 3), point[1], round((bounds.minZ + bounds.maxZ) / 2, 3)];
     }
     let [x, z] = clampToRect(point[0], point[2], inset, 0);
-    [x, z] = pushOutOfBoxes(x, z, activity.forbiddenAreas || [], radius);
+    [x, z] = pushOutOfBoxes(x, z, blockingBoxes(activity), radius);
     [x, z] = clampToRect(x, z, inset, 0);
     if (!pointInWalkable(activity, [x, point[1], z], radius)) {
         x = (bounds.minX + bounds.maxX) / 2;

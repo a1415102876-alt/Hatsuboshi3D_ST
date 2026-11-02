@@ -108,6 +108,7 @@ varying vec2 vUv;
 uniform sampler2D gkLookPlate;
 uniform vec4 gkLookCover;
 uniform float gkLookHasPlate;
+uniform float gkLookSharpen;
 
 vec2 gkPlateUv(vec2 uv) {
     return vec2(uv.x, 1.0 - uv.y) * gkLookCover.xy + gkLookCover.zw;
@@ -124,7 +125,7 @@ vec3 gkSample(vec2 uv) {
 void main() {
     vec4 source = texture2D(gkLookMap, vUv);
     vec3 base = gkSample(vUv);
-    if (gkLookHasPlate > 0.5 && source.a > 0.82) {
+    if (gkLookHasPlate > 0.5 && gkLookSharpen > 0.5 && source.a > 0.82) {
         vec3 soft = (
             gkSample(vUv + vec2(gkLookTexel.x, 0.0)) +
             gkSample(vUv - vec2(gkLookTexel.x, 0.0)) +
@@ -189,6 +190,7 @@ export class GakumasLookPass {
                 gkLookPlate: { value: null },
                 gkLookCover: { value: new THREE.Vector4(1, 1, 0, 0) },
                 gkLookHasPlate: { value: 0 },
+                gkLookSharpen: { value: 1 },
             },
             vertexShader: LOOK_VERTEX,
             fragmentShader: LOOK_FRAGMENT,
@@ -206,6 +208,11 @@ export class GakumasLookPass {
         this.scene.add(this.mesh);
         this.size = new THREE.Vector2();
         this.bloom = cloneLookBloom();
+    }
+
+    setPlateSharpen(enabled) {
+        if (!this.material?.uniforms?.gkLookSharpen) return;
+        this.material.uniforms.gkLookSharpen.value = enabled ? 1 : 0;
     }
 
     setBloom({ intensity, knee, radius } = {}) {

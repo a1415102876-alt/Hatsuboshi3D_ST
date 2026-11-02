@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f5f7f8">
   <title>MMD 对话舞台</title>
-  <link rel="stylesheet" href="./style.css?v=20261015-nia-audition-beat-v1">
+  <link rel="stylesheet" href="./style.css?v=20261026-placement-gizmo-v1">
   <script type="importmap">
     {
       "imports": {
@@ -212,6 +212,27 @@
           </div>
           <p class="hint" id="sceneStatus" role="status">场景只作背景，不投射阴影到角色；VN 立绘不受影响。</p>
 
+          <section id="stagePlacement" class="stage-placement" aria-label="角色站位与机位记录">
+            <h3>角色站位与机位记录</h3>
+            <p class="hint">位移相对于当前布局的默认站位，单位为米。移动角色时摄像机保持不动；在画面中拖动、缩放可调整镜头。</p>
+            <label class="placement-gizmo-toggle"><input id="placementGizmo" type="checkbox" data-placement-edit disabled><span>显示三轴移动箭头</span></label>
+            <button id="placementFrame" class="secondary-button" type="button" data-placement-edit disabled>查看全身</button>
+            <p id="placementBoundary" class="hint">红 X、绿 Y（升降）、蓝 Z；打开后拖动脚下箭头调整站位。</p>
+            <label class="placement-step">移动步长<select id="placementStep" data-placement-edit disabled><option value="0.05">0.05 米</option><option value="0.1" selected>0.1 米</option><option value="0.5">0.5 米</option><option value="1">1 米</option></select></label>
+            <div class="placement-axis"><label for="placementX">X 位移</label><button type="button" data-placement-nudge="0" data-direction="-1" data-placement-edit aria-label="X 减小" disabled>−</button><input id="placementX" type="number" step="0.1" value="0" data-placement-edit disabled><button type="button" data-placement-nudge="0" data-direction="1" data-placement-edit aria-label="X 增大" disabled>+</button></div>
+            <div class="placement-axis"><label for="placementY">Y 升降</label><button type="button" data-placement-nudge="1" data-direction="-1" data-placement-edit aria-label="降低角色" disabled>−</button><input id="placementY" type="number" step="0.1" value="0" data-placement-edit disabled><button type="button" data-placement-nudge="1" data-direction="1" data-placement-edit aria-label="升高角色" disabled>+</button></div>
+            <div class="placement-axis"><label for="placementZ">Z 位移</label><button type="button" data-placement-nudge="2" data-direction="-1" data-placement-edit aria-label="Z 减小" disabled>−</button><input id="placementZ" type="number" step="0.1" value="0" data-placement-edit disabled><button type="button" data-placement-nudge="2" data-direction="1" data-placement-edit aria-label="Z 增大" disabled>+</button></div>
+            <label class="placement-step">角色转向（度）<input id="placementYaw" type="number" step="5" value="0" data-placement-edit disabled></label>
+            <output id="placementCoordinates" class="hint">先载入偶像和 3D 场景。</output>
+            <button id="placementReset" class="secondary-button" type="button" data-placement-edit disabled>恢复默认站位</button>
+            <label class="placement-name" for="placementName">记录名称<input id="placementName" type="text" maxlength="80" placeholder="例如：学生会室 · 正面中景"></label>
+            <button id="placementRecord" class="primary-button" type="button" data-placement-edit disabled>记录当前机位与站位</button>
+            <label class="placement-name" for="placementRecords">本机记录<select id="placementRecords" disabled><option value="">尚未记录机位</option></select></label>
+            <div class="placement-actions"><button id="placementApply" class="secondary-button" type="button" disabled>应用记录</button><button id="placementCopy" class="secondary-button" type="button" disabled>复制 JSON</button><button id="placementExport" class="secondary-button" type="button" disabled>导出 JSON</button></div>
+            <p id="placementStatus" class="hint" role="status">记录保存在当前浏览器；导出 JSON 后可交给我配置场景。</p>
+            <details><summary>查看记录参数</summary><textarea id="placementOutput" rows="9" readonly aria-label="机位和站位 JSON" placeholder="记录后显示完整参数"></textarea></details>
+          </section>
+
           <div class="section-heading section-gap"><div><span>03</span><h3>灯光</h3></div><small>实时调整</small></div>
           <div class="light-controls" aria-label="舞台灯光控制">
             <label class="light-row preset-row"><span>渲染预设</span><select id="renderPreset"><option value="mmd">MMD 原生感</option><option value="gakumas">学马仕风格</option><option value="stage">舞台对比</option><option value="soft">柔和肤色</option></select><output></output></label>
@@ -318,7 +339,7 @@
   <div id="toastStack" class="toast-stack" aria-live="polite"></div>
   <script src="./picker-bootstrap.js"></script>
   <script type="module">
-      import('./app.js?v=20261017-audition-origin-v3').catch(function (error) {
+      import('./app.js?v=20261102-krnh-sleeve-gravity-v1').catch(function (error) {
       console.error('[MMD Stage] 运行库启动失败', error);
       var status = document.getElementById('statusText');
       var badge = document.getElementById('runtimeBadge');
@@ -328,3 +349,4 @@
   </script>
 </body>
 </html>
+

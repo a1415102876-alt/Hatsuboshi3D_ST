@@ -1,21 +1,64 @@
-import { resolveNpcPortrait } from './beat-npc-portraits.js?v=20261014-npc-portraits-v1';
-import { sceneIdolId, SCENE_IDOLS, STAR_EYE_IDOLS } from './scene-protocol.js?v=20261006-star-eyes-v1';
-import { BEAT_CUE_IDS, BEAT_BODY_CUE_SPECS, BEAT_EFFECT_ALIASES, BEAT_EFFECT_IDS, BEAT_FACE_ALIASES, BEAT_FACE_IDS, BEAT_OVERLAY_CUE_IDS, resolveBeatCueAlias } from './beat-cues.js?v=20261011-stage-cue-rules-v4';
-import { resolveBeatBackgroundAsset } from './beat-background-assets.js?v=20261008-background-aliases-v1';
+import { resolveNpcPortrait } from './beat-npc-portraits.js?v=20261102-krnh-3d-v1';
+import { sceneIdolId, SCENE_IDOLS, STAR_EYE_IDOLS } from './scene-protocol.js?v=20261102-krnh-3d-v1';
+import { BEAT_CUE_IDS, BEAT_BODY_CUE_SPECS, BEAT_EFFECT_ALIASES, BEAT_EFFECT_IDS, BEAT_FACE_ALIASES, BEAT_FACE_IDS, BEAT_OVERLAY_CUE_IDS, isBeatMotionFile, resolveBeatCueAlias } from './beat-cues.js?v=20261101-motion-file-v1';
+import { normalizeFaceCue, normalizeGestureCue } from './dialogue-intent.js?v=20261026-cue-words-v1';
+import { resolveBeatBackgroundAsset } from './beat-background-assets.js?v=20261029-bg-filename-v1';
 import { resolveBeatCostume } from './beat-costumes.js?v=20261013-all-idol-solo1-v1';
-import { BEAT_CAMERA_EASES, BEAT_CAMERA_MOTIONS, BEAT_CAMERA_PRESETS, beatActorId } from './beat-player-core.js?v=20261023-camera-v1';
+import { BEAT_CAMERA_PRESETS, BEAT_SHOTS, beatActorId } from './beat-player-core.js?v=20261102-krnh-3d-v1';
 
 const DEFAULT_CUES = BEAT_CUE_IDS;
-const DEFAULT_SHOTS = Object.freeze(['wide', 'medium', 'close', 'reaction', 'keep']);
+const DEFAULT_SHOTS = BEAT_SHOTS;
 const DEFAULT_CAMERA_PRESETS = BEAT_CAMERA_PRESETS;
-const DEFAULT_CAMERA_MOTIONS = BEAT_CAMERA_MOTIONS;
-const DEFAULT_CAMERA_EASES = BEAT_CAMERA_EASES;
 const DEFAULT_WAITS = Object.freeze(['text', 'voice', 'none']);
 const DEFAULT_POSITIONS = Object.freeze(['left', 'center', 'right']);
 const DEFAULT_FACES = BEAT_FACE_IDS;
 const DEFAULT_OVERLAYS = BEAT_OVERLAY_CUE_IDS;
 const DEFAULT_EFFECTS = BEAT_EFFECT_IDS;
 const BUILTIN_OTHER_SPEAKERS = new Set(['producer', '制作人', 'narrator', '旁白']);
+const CUE_WORD_ALIASES = Object.freeze({
+    疑问: 'ask',
+    疑惑: 'ask',
+    困扰: 'talk-concerned',
+    为难: 'talk-concerned',
+});
+const FACE_WORD_ALIASES = Object.freeze({
+    高兴: 'happy',
+    开心: 'happy',
+    得意: 'happy',
+    惊讶: 'surprised',
+    吃惊: 'surprised',
+    害羞: 'shy',
+    害臊: 'shy',
+    困扰: 'sad',
+    为难: 'sad',
+    不安: 'sad',
+    自然: 'neutral',
+    平常: 'neutral',
+    生气: 'angry',
+    难过: 'sad',
+    不开心: 'sad',
+});
+const SHOT_WORDS = Object.freeze({ 中景: 'medium', 近景: 'close', 特写: 'close', 反应: 'reaction', 全景: 'wide', 保持: 'keep' });
+// `camera` is an optional framing override and deliberately shares the shot
+// vocabulary. The same value is consumed by both 2D and 3D rendering.
+const CAMERA_WORDS = SHOT_WORDS;
+function canonToken(value, words) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    return words[raw] || raw.toLowerCase();
+}
+
+function resolveCueWord(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    return normalizeGestureCue(raw) || CUE_WORD_ALIASES[raw] || raw.toLowerCase();
+}
+
+function resolveFaceWord(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    return FACE_WORD_ALIASES[raw] || normalizeFaceCue(raw) || raw.toLowerCase();
+}
 function asSet(values, fallback) {
     const source = Array.isArray(values) && values.length ? values : fallback;
     return new Set(source.map(value => String(value).trim()).filter(Boolean));
@@ -128,8 +171,6 @@ export function parseBeatScript(source, options = {}) {
     const cues = asSet(options.cues, DEFAULT_CUES);
     const shots = asSet(options.shots, DEFAULT_SHOTS);
     const cameraPresets = asSet(options.cameraPresets, DEFAULT_CAMERA_PRESETS);
-    const cameraMotions = asSet(options.cameraMotions, DEFAULT_CAMERA_MOTIONS);
-    const cameraEases = asSet(options.cameraEases, DEFAULT_CAMERA_EASES);
     const waits = asSet(options.waits, DEFAULT_WAITS);
     const positions = asSet(options.positions, DEFAULT_POSITIONS);
     const faces = asSet(options.faces, DEFAULT_FACES);
@@ -191,13 +232,15 @@ export function parseBeatScript(source, options = {}) {
             continue;
         }
 
-        let cue = attributes.cue || 'talk';
-        if (!cues.has(cue)) {
+        const requestedCue = String(attributes.cue || '').trim();
+        const motionFile = isBeatMotionFile(requestedCue);
+        let cue = motionFile ? requestedCue.replace(/\\/gu, '/').split('/').pop() : resolveCueWord(requestedCue || 'talk');
+        if (!motionFile && !cues.has(cue)) {
             addError(errors, 'unknown-cue', `未知动作：${cue}，已回退到 talk。`, openIndex, beatId);
             cue = cues.has('talk') ? 'talk' : [...cues][0] || 'idle';
         }
 
-        let face = portrait ? portrait.emotion : String(attributes.face || '').trim().toLowerCase();
+        let face = portrait ? portrait.emotion : resolveFaceWord(attributes.face || '');
         if (portrait) {
             if (!portrait.matchedFace) addError(errors, 'unknown-portrait-face', `当前角色没有立绘表情：${attributes.face}，已回退到默认立绘。`, openIndex, beatId);
         } else {
@@ -247,6 +290,9 @@ export function parseBeatScript(source, options = {}) {
             // A 2D NPC face must never change the last visible idol's morphs.
             validOverlays = [];
             validEffects = [];
+        } else if (motionFile) {
+            face = '';
+            validOverlays = [];
         } else if (bodySpec) face ||= bodySpec.defaultFace;
         else {
             if (face) addError(errors, 'paired-face', '成套动作自带表情，已忽略独立 face。', openIndex, beatId);
@@ -259,30 +305,20 @@ export function parseBeatScript(source, options = {}) {
             validOverlays = validOverlays.slice(0, 1);
         }
 
-        let shot = attributes.shot || previousShot;
+        let shot = canonToken(attributes.shot, SHOT_WORDS) || previousShot;
         if (!shots.has(shot)) {
             addError(errors, 'unknown-shot', `未知镜头：${shot}，已回退到 keep。`, openIndex, beatId);
             shot = shots.has('keep') ? 'keep' : [...shots][0] || 'keep';
         }
 
-        let camera = String(attributes.camera || '').trim().toLowerCase();
+        let camera = canonToken(attributes.camera, CAMERA_WORDS);
         if (camera && !cameraPresets.has(camera)) {
-            addError(errors, 'unknown-camera', '未知 3D 构图：' + camera + '，已交给播放器按 shot 推断。', openIndex, beatId);
+            addError(errors, 'unknown-camera', '未知 camera 景别：' + camera + '，已忽略。', openIndex, beatId);
             camera = '';
         }
-        let cameraMotion = String(attributes['camera-motion'] || '').trim().toLowerCase();
-        if (cameraMotion && !cameraMotions.has(cameraMotion)) {
-            addError(errors, 'unknown-camera-motion', '未知镜头运动：' + cameraMotion + '，已忽略。', openIndex, beatId);
-            cameraMotion = '';
+        if (attributes['camera-motion'] || attributes['camera-ease'] || attributes['camera-duration']) {
+            addError(errors, 'deprecated-camera-motion', 'camera-motion/camera-ease/camera-duration 已停用；camera 直接作用于 2D 和 3D 景别。', openIndex, beatId);
         }
-        let cameraEase = String(attributes['camera-ease'] || '').trim().toLowerCase();
-        if (cameraEase && !cameraEases.has(cameraEase)) {
-            addError(errors, 'unknown-camera-ease', '未知镜头缓动：' + cameraEase + '，已回退到 out-sine。', openIndex, beatId);
-            cameraEase = 'out-sine';
-        }
-        let cameraDuration = Number(attributes['camera-duration']);
-        if (!Number.isFinite(cameraDuration) || cameraDuration <= 0) cameraDuration = 0;
-        else cameraDuration = Math.min(20, cameraDuration);
 
         const look = attributes.look || previousLook;
         let position = String(attributes.position || '').trim().toLowerCase();
@@ -306,14 +342,6 @@ export function parseBeatScript(source, options = {}) {
             }
         }
         const background = previousBackground;
-        if (previousBackgroundAsset?.kind === '3d') {
-            if (shot === 'wide') {
-                addError(errors, 'scene-wide', '3D 场景暂不使用全景，已回退到 medium。', openIndex, beatId);
-                shot = 'medium';
-            } else if (shot === 'keep') {
-                shot = ['medium', 'close', 'reaction'].includes(previousShot) ? previousShot : 'medium';
-            }
-        }
         let wait = attributes.wait || 'text';
         if (!waits.has(wait)) {
             addError(errors, 'unknown-wait', `未知等待方式：${wait}，已回退到 text。`, openIndex, beatId);
@@ -332,9 +360,16 @@ export function parseBeatScript(source, options = {}) {
         if (previousBackgroundAsset) beat.backgroundAsset = previousBackgroundAsset;
         if (position) beat.position = position;
         if (camera) beat.camera = camera;
-        if (cameraMotion) beat.cameraMotion = cameraMotion;
-        if (cameraEase) beat.cameraEase = cameraEase;
-        if (cameraDuration) beat.cameraDuration = cameraDuration;
+        const cameraPose = parseCameraPose(attributes['camera-pose']);
+        if (String(attributes['camera-pose'] || '').trim() && !cameraPose) {
+            addError(errors, 'invalid-camera-pose', 'camera-pose 需要 x,y,z,水平角,俯仰角 五个数字，已忽略。', openIndex, beatId);
+        }
+        if (cameraPose) beat.cameraPose = cameraPose;
+        const actorPose = parseActorPose(attributes['actor-pose']);
+        if (String(attributes['actor-pose'] || '').trim() && !actorPose) {
+            addError(errors, 'invalid-actor-pose', 'actor-pose 需要 x,y,z,朝向 四个数字，已忽略。', openIndex, beatId);
+        }
+        if (actorPose) beat.actorPose = actorPose;
         beats.push(beat);
         previousLook = look;
         previousShot = shot;
@@ -359,6 +394,42 @@ export const BEAT_DEFAULTS = Object.freeze({
 });
 
 /** Resolve friendly aliases and paired family IDs for the Stage cue parser. */
+export function parseCameraPose(value) {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+        return parseCameraPose([value.x, value.y, value.z, value.yaw, value.pitch].join(','));
+    }
+    const parts = String(value || '').split(',').map(part => Number(String(part).trim()));
+    if (parts.length !== 5 || parts.some(part => !Number.isFinite(part))) return null;
+    const [x, y, z, yaw, pitch] = parts;
+    return { x, y, z, yaw, pitch: Math.min(80, Math.max(-80, pitch)) };
+}
+
+export function formatCameraPose(pose) {
+    const parsed = parseCameraPose(pose);
+    if (!parsed) return '';
+    return [parsed.x, parsed.y, parsed.z, parsed.yaw, parsed.pitch]
+        .map(value => String(Math.round(value * 1000) / 1000))
+        .join(',');
+}
+
+export function parseActorPose(value) {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+        return parseActorPose([value.x, value.y, value.z, value.yaw].join(','));
+    }
+    const parts = String(value || '').split(',').map(part => Number(String(part).trim()));
+    if (parts.length !== 4 || parts.some(part => !Number.isFinite(part))) return null;
+    const [x, y, z, yaw] = parts;
+    return { x, y, z, yaw };
+}
+
+export function formatActorPose(pose) {
+    const parsed = parseActorPose(pose);
+    if (!parsed) return '';
+    return [parsed.x, parsed.y, parsed.z, parsed.yaw]
+        .map(value => String(Math.round(value * 1000) / 1000))
+        .join(',');
+}
+
 export function resolveBeatCue(cue, face = '') {
     return resolveBeatCueAlias(cue, face);
 }

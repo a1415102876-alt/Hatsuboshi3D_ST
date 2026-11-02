@@ -16,21 +16,31 @@
   const MAO_REFERENCE_ID = "4199b1062c28461ca822d130138e99d1";
   const DEFAULT_WORKER_ORIGIN = "https://hatsuboshitest.a1415102876.workers.dev";
   const DEFAULT_MODEL = "s2.1-pro-free";
-  const PRONUNCIATION_VERSION = "20261024-2";
+  const PRONUNCIATION_VERSION = "20261027-name-dict-v1";
   // User-supplied kana readings; generated offline with tools/generate-fish-pronunciation.py.
   // Pitch is OpenJTalk's default inference, not extracted game voice accent.
+  // Spoken lines use full names, given names, and the simplified Chinese spellings.
+  // Bare 広 / 广 stay out: they also occur inside 広い and would be forced to ひろ.
   const PRONUNCIATION_RULES = Object.freeze([
     ["藤田ことね", "ふじた　ことね", "fu1ji0ta0ko0to0ne0"],
+    ["藤田琴音", "ふじた　ことね", "fu1ji0ta0ko0to0ne0"],
     ["月村手毬", "つきむら　てまり", "tsu1ki0mu0ra1te1ma0ri0"],
     ["花海咲季", "はなみ　さき", "ha0na1mi1sa1ki1"],
     ["秦谷美鈴", "はたや　みすず", "ha1ta0ya0mi0su1zu1"],
+    ["秦谷美铃", "はたや　みすず", "ha1ta0ya0mi0su1zu1"],
     ["花海佑芽", "はなみ　うめ", "ha0na1mi1u0me1"],
     ["有村麻央", "ありむら　まお", "a1ri0mu0ra1ma0o1"],
     ["葛城リーリヤ", "かつらぎ　りーりや", "ka0tsu1ra1gi1ri1i1ri1ya0"],
+    ["葛城莉莉娅", "かつらぎ　りーりや", "ka0tsu1ra1gi1ri1i1ri1ya0"],
     ["倉本千奈", "くらもと　ちな", "ku0ra1mo0to0chi1na0"],
+    ["仓本千奈", "くらもと　ちな", "ku0ra1mo0to0chi1na0"],
     ["紫雲清夏", "しうん　すみか", "shi0u1N1su1mi0ka0"],
+    ["紫云清夏", "しうん　すみか", "shi0u1N1su1mi0ka0"],
     ["篠澤広", "しのさわ　ひろ", "shi1no0sa1wa0hi1ro0"],
+    ["篠沢広", "しのさわ　ひろ", "shi1no0sa1wa0hi1ro0"],
+    ["筱泽广", "しのさわ　ひろ", "shi1no0sa1wa0hi1ro0"],
     ["姫崎莉波", "ひめさき　りなみ", "hi1me0sa0ki0ri0na1mi0"],
+    ["姬崎莉波", "ひめさき　りなみ", "hi1me0sa0ki0ri0na1mi0"],
     ["十王星南", "じゅうおう　せな", "ju0u1o1o1se1na0"],
     ["雨夜燕", "あまや　つばめ", "a1ma0ya0tsu0ba1me1"],
     ["shiun sumika", "しうん　すみか", "shi0u1N1su1mi0ka0"],
@@ -39,7 +49,22 @@
     ["arimura-mao", "ありむら　まお", "a1ri0mu0ra1ma0o1"],
     ["amaya tsubame", "あまや　つばめ", "a1ma0ya0tsu0ba1me1"],
     ["amaya-tsubame", "あまや　つばめ", "a1ma0ya0tsu0ba1me1"],
+    ["莉莉娅", "りーりや", "ri1i1ri1ya0"],
+    ["リーリヤ", "りーりや", "ri1i1ri1ya0"],
+    ["ことね", "ことね", "ko0to0ne0"],
+    ["琴音", "ことね", "ko0to0ne0"],
+    ["咲季", "さき", "sa1ki1"],
+    ["手毬", "てまり", "te1ma0ri0"],
+    ["美鈴", "みすず", "mi0su1zu1"],
+    ["美铃", "みすず", "mi0su1zu1"],
+    ["佑芽", "うめ", "u0me1"],
+    ["麻央", "まお", "ma0o1"],
+    ["千奈", "ちな", "chi1na0"],
+    ["清夏", "すみか", "su1mi0ka0"],
+    ["莉波", "りなみ", "ri0na1mi0"],
+    ["星南", "せな", "se1na0"],
     ["初星", "はつぼし", "ha0tsu1bo0shi0"],
+    ["燕", "つばめ", "tsu0ba1me1"],
     ["毬", "まり", "ma0ri1"]
   ].map(([key, reading, value]) => Object.freeze({ key, reading, value })));
   const ALLOWED_TAGS = Object.freeze(["soft", "pause", "long pause", "emphasis", "excited", "sighing"]);

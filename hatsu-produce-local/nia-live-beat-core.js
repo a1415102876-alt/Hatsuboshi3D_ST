@@ -1,5 +1,5 @@
-import { parseBeatScript } from '../mmd-dialogue-stage/beat-protocol.js?v=20261014-npc-portraits-v1';
-import { beatActorId } from '../mmd-dialogue-stage/beat-player-core.js?v=20261014-npc-portraits-v1';
+import { parseBeatScript } from '../mmd-dialogue-stage/beat-protocol.js?v=20261102-krnh-3d-v1';
+import { beatActorId } from '../mmd-dialogue-stage/beat-player-core.js?v=20261102-krnh-3d-v1';
 
 const xml = value => String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const attr = (tag, name) => tag.match(new RegExp('\\b' + name + '\\s*=\\s*["\\x27]([^"\\x27]*)["\\x27]', 'i'))?.[1] || '';

@@ -1,17 +1,18 @@
-import { createSceneDirector } from './live-portrait.js?v=20261024-crowd-budget-v1';
-import { sceneIdolId } from './scene-protocol.js?v=20261006-star-eyes-v1';
-import { buildStageSlides, parseBeatScript, resolveBeatCue } from './beat-protocol.js?v=20261024-tts-speakers-v1';
-import { BeatScenePool } from './beat-scene-pool.js?v=20261024-danceroom-camera-v2';
-import { isBeatScene } from './beat-background-assets.js?v=20261008-background-aliases-v1';
+import { createSceneDirector } from './live-portrait.js?v=20261102-actor-pose-v1';
+import { performanceRecommendations } from './performance-monitor-core.js?v=20261030-perf-diagnostic-v2';
+import { sceneIdolId } from './scene-protocol.js?v=20261102-krnh-3d-v1';
+import { buildStageSlides, parseBeatScript, resolveBeatCue } from './beat-protocol.js?v=20261102-actor-pose-v1';
+import { BeatScenePool } from './beat-scene-pool.js?v=20261102-beat-camera-pose-v1';
+import { isBeatScene } from './beat-background-assets.js?v=20261029-bg-filename-v1';
 import { beatSpeakerStyle } from './beat-speaker-theme.js?v=20261007-speaker-colors-v1';
-import { BEAT_ACTOR_NAMES, BEAT_CUES, BEAT_EFFECTS, BEAT_FACES, BEAT_OVERLAYS, BEAT_POSITIONS, BEAT_SHOTS, BEAT_SPEAKER_NAMES, backgroundPanPosition, beatActorId, beatBackgroundChanged, buildBackgroundPlan, estimateBeatHold, getShotPreset, resolveBeatShot, stagePositionOffset } from './beat-player-core.js?v=20261023-camera-v1';
+import { BEAT_ACTOR_NAMES, BEAT_CUES, BEAT_EFFECTS, BEAT_FACES, BEAT_OVERLAYS, BEAT_POSITIONS, BEAT_SHOTS, BEAT_SPEAKER_NAMES, backgroundDepthBlur, backgroundPanAmount, backgroundPanPosition, beatActorId, beatBackgroundChanged, buildBackgroundPlan, estimateBeatHold, getShotPreset, plateCoverToBackground, preparedStageCovers, resolveBeatCameraPreset, resolveBeatShot, stagePlateCover, stagePositionOffset, zoomPlateCover } from './beat-player-core.js?v=20261102-krnh-3d-v1';
 import { BEAT_BACKGROUND_NAMES, backgroundAssetUrl, preloadBackgrounds } from './beat-backgrounds.js?v=20261017-browser-cache-v1';
 import { TtsLipSyncAnalyzer } from './tts-lip-sync.js?v=20261013-audio-talk-v3';
-import { loadResourceLibrary, ResourceSession } from './asset-runtime.js';
-import { buildDialogueAssetPlan } from './dialogue-asset-plan.js?v=20261024-idle-chat-v2';
+import { loadResourceLibrary, ResourceSession } from './asset-runtime.js?v=20261102-krnh-profile-v1';
+import { buildDialogueAssetPlan } from './dialogue-asset-plan.js?v=20261102-krnh-talk-idle-v1';
 import { createResourceLoading } from './resource-loading.js';
 import { ResourceBarrier } from './resource-barrier.js';
-import { buildChatPrompt, createChatBridge, normalizeChatReply } from './beat-chat.js?v=20261024-idle-chat-v2';
+import { buildChatPrompt, createChatBridge, normalizeChatReply } from './beat-chat.js?v=20261028-suggest-v1';
 
 // Resolve against this module. A document-relative ./backgrounds_2d path
 // points at the produce page when the player is embedded there.
@@ -48,10 +49,10 @@ const CHOICE_SCRIPT = `<beat speaker="kotone" cue="talk" look="camera" position=
 </choice>`;
 
 const SCENE_SCRIPT = `<beat speaker="kotone" cue="talk" look="camera" position="center" background="声乐练习室-午" shot="medium" camera="medium">制作人，先从中景开始。</beat>
-<beat speaker="producer" camera="side" camera-motion="turn" camera-duration="0.6">镜头转向我这边，确认一下站位。</beat>
-<beat speaker="mao" cue="talk" look="camera" position="right" shot="medium" camera="two-shot">我也准备好了，保持双人构图。</beat>
-<beat speaker="kotone" cue="happy" look="camera" position="center" shot="close" camera="close" camera-motion="push-in" camera-duration="0.45">好！那我先来，镜头再靠近一点。</beat>
-<beat speaker="rinami" cue="greet" look="camera" position="left" shot="reaction" camera="emphasis" camera-motion="lower" camera-duration="1.2" camera-ease="out-sine">琴音妹妹，加油。</beat>`;
+<beat speaker="producer" camera="close">把镜头切到近景，确认一下站位。</beat>
+<beat speaker="mao" cue="talk" look="camera" position="right" shot="wide" camera="wide">我也准备好了，保持双人构图。</beat>
+<beat speaker="kotone" cue="happy" look="camera" position="center" shot="close" camera="close">好！那我先来。</beat>
+<beat speaker="rinami" cue="greet" look="camera" position="left" shot="reaction" camera="reaction">琴音妹妹，加油。</beat>`;
 
 const NAME_MAP = BEAT_SPEAKER_NAMES;
 const ACTOR_OPTIONS = [...new Set([...Object.keys(NAME_MAP), ...Object.values(NAME_MAP)])];
@@ -159,10 +160,10 @@ export class BeatPlayerApp {
         });
         this.elements.sendChat?.addEventListener('click', () => this.sendChatMessage(this.elements.chatInput?.value || ''));
         this.elements.chatInput?.addEventListener('keydown', event => {
-            if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
-                event.preventDefault();
-                this.sendChatMessage(this.elements.chatInput.value);
-            }
+            if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
+            if (!this.inlineChat && !(event.ctrlKey || event.metaKey)) return;
+            event.preventDefault();
+            this.sendChatMessage(this.elements.chatInput.value);
         });
         this.elements.load?.addEventListener('click', () => this.compile());
         this.elements.sample?.addEventListener('click', () => {
@@ -197,23 +198,8 @@ export class BeatPlayerApp {
         });
     }
 
-    compile({ prepareCompiled } = {}) {
-        this.stop();
-        this.resourceBarrier?.cancel();
-        this.resources?.dispose();
-        if (this.resourceGeneration) this.resetResourcePlayers();
-        this.ttsSession = this.tts?.beginSession?.(`beat-${Date.now()}`) || '';
-        this.resourceGeneration += 1;
-        this.scenePool.present('', null);
-        for (const entry of this.director.allEntries()) {
-            entry.present = false;
-            entry.canvas.style.visibility = 'hidden';
-            entry.canvas.style.opacity = '0';
-        }
-        this.state.selectedChoice = -1;
-        this.needsResourcePreparation = false;
-        this.hideChoicePanel();
-        const parsed = parseBeatScript(this.elements.script.value, {
+    parseScript(source = this.elements.script.value) {
+        return parseBeatScript(source, {
             actors: ACTOR_OPTIONS,
             allowOtherSpeakers: true,
             cues: BEAT_CUES,
@@ -228,14 +214,63 @@ export class BeatPlayerApp {
             defaultBackground: this.defaultBackground,
             defaultCostumes: this.defaultCostumes,
         });
+    }
+
+    /**
+     * Rebuild only the parsed Beat/stage description while retaining the
+     * currently prepared ResourceSession and ResourceBarrier. The editor uses
+     * this for text, camera, look and other local edits that do not change the
+     * cast, costume or background plan. Re-running compile() for these edits
+     * would stop the director and restart the whole multi-actor preload.
+     */
+    refreshCompiledPreview() {
+        const parsed = this.parseScript();
         const stage = buildStageSlides(parsed.beats, NAME_MAP);
+        const previousIndex = this.state.current;
         this.compiled = { ...parsed, ...stage };
-        prepareCompiled?.(this.compiled);
         this.preloadPlan = this.buildPreloadPlan(parsed.beats);
         this.backgroundPlan = buildBackgroundPlan(parsed.beats);
         this.renderDiagnostics();
+        if (!parsed.beats.length) {
+            this.state.current = -1;
+            this.renderBeat(null);
+            return false;
+        }
+        this.state.current = Math.min(Math.max(previousIndex, -1), parsed.beats.length - 1);
+        this.renderBeat(this.state.current >= 0 ? this.compiled.beats[this.state.current] : null);
+        return true;
+    }
+
+    compile({ prepareCompiled, silent = false } = {}) {
+        const parsed = this.parseScript();
+        const stage = buildStageSlides(parsed.beats, NAME_MAP);
+        const preloadPlan = this.buildPreloadPlan(parsed.beats);
+        const backgroundPlan = buildBackgroundPlan(parsed.beats);
+        const reuseStage = this.canReusePreparedStage(preloadPlan, backgroundPlan);
+        this.stop();
+        this.state.selectedChoice = -1;
+        this.needsResourcePreparation = false;
+        this.hideChoicePanel();
+        this.resourceBarrier?.cancel();
+        this.ttsSession = this.tts?.beginSession?.(`beat-${Date.now()}`) || '';
+        if (!reuseStage) {
+            this.resources?.dispose();
+            if (this.resourceGeneration) this.resetResourcePlayers();
+            this.scenePool.present('', null);
+            for (const entry of this.director.allEntries()) {
+                entry.present = false;
+                entry.canvas.style.visibility = 'hidden';
+                entry.canvas.style.opacity = '0';
+            }
+        }
+        this.resourceGeneration += 1;
+        this.compiled = { ...parsed, ...stage };
+        prepareCompiled?.(this.compiled);
+        this.preloadPlan = preloadPlan;
+        this.backgroundPlan = backgroundPlan;
+        this.renderDiagnostics();
         this.state.current = -1;
-        this.renderBeat(null);
+        if (!reuseStage) this.renderBeat(null);
         if (!parsed.beats.length) {
             this.preloadPromise = Promise.resolve(false);
             this.setStatus('没有可播放的 Beat。');
@@ -243,9 +278,9 @@ export class BeatPlayerApp {
         }
         const generation = this.resourceGeneration;
         const choiceNote = parsed.choices.length === 4 ? '，结尾有选项事件' : '';
-        this.setStatus(`已解析 ${parsed.beats.length} 段 Beat${choiceNote}，正在预加载角色资源…`);
+        if (!reuseStage && !silent) this.setStatus(`已解析 ${parsed.beats.length} 段 Beat${choiceNote}，正在预加载角色资源…`);
         this.resourceBarrier = new ResourceBarrier({
-            prepare: () => this.prepareResources(this.preloadPlan, generation),
+            prepare: () => this.prepareResources(this.preloadPlan, generation, { reuse: reuseStage, silent }),
             beforeRetry: () => { this.resources?.dispose(); this.resetResourcePlayers(); },
             isCurrent: () => generation === this.resourceGeneration,
         });
@@ -259,6 +294,66 @@ export class BeatPlayerApp {
                 .then(ready => this.finishChatCompile(generation, ready))
                 .catch(error => this.setChatStatus(`资源加载失败：${error.message || error}`, 'error'));
         }
+    }
+
+    canReusePreparedStage(plan, backgrounds) {
+        const cast = [];
+        for (const [idolId, entry] of this.director?.entries || []) {
+            if (entry?.player?.ready) cast.push(idolId);
+        }
+        const loadedBackgrounds = [];
+        for (const [name, entry] of this.scenePool?.entries || []) {
+            if (entry?.loaded) loadedBackgrounds.push(name);
+        }
+        // Flat plates are stored on the player, not in the 3D scene pool.
+        // Counting only the pool made every 2D beat look unprepared.
+        for (const name of this.backgroundImages?.keys() || []) loadedBackgrounds.push(name);
+        return preparedStageCovers({
+            ready: Boolean(this.resources && !this.resources.disposed && cast.length),
+            cast,
+            backgrounds: loadedBackgrounds,
+        }, {
+            cast: plan?.cast || [],
+            backgrounds: backgrounds || [],
+        });
+    }
+
+    getPerformanceSnapshot() {
+        const director = this.director?.getPerformanceSnapshot?.() || {
+            actors: [],
+            aggregate: {},
+            activeActors: 0,
+            loadedActors: 0,
+        };
+        const frames = director.actors
+            .filter(actor => actor.present && actor.ready)
+            .map(actor => actor.frame || {});
+        const frameMs = frames.reduce((total, frame) => total + (Number(frame.frameMs) || 0), 0);
+        const fpsValues = frames.map(frame => Number(frame.fps) || 0).filter(value => value > 0);
+        const snapshot = {
+            timestamp: Date.now(),
+            state: {
+                current: this.state.current,
+                total: this.compiled.beats.length,
+                playing: this.state.playing,
+                resourceLoading: this.resourceLoadingActive,
+            },
+            cast: [...(this.preloadPlan?.cast || [])],
+            scene: {
+                loaded: [...(this.scenePool?.entries || [])]
+                    .filter(([, entry]) => entry?.loaded)
+                    .map(([name]) => name),
+                active: this.scenePool?.activePlayer?.canvas?.dataset?.idol || '',
+            },
+            activeActors: director.activeActors,
+            loadedActors: director.loadedActors,
+            actors: director.actors,
+            aggregate: director.aggregate,
+            fps: fpsValues.length ? Math.min(...fpsValues) : 0,
+            frameMs,
+        };
+        snapshot.recommendations = performanceRecommendations(snapshot);
+        return snapshot;
     }
 
     setModeUi(chatActive) {
@@ -341,7 +436,8 @@ export class BeatPlayerApp {
         this.setModeUi(true);
         this.clearChatLog();
         this.appendChatLine('system', `已进入${option.name}的闲聊场景。`, '系统');
-        this.setChatStatus('正在加载家·教室，并准备制作察觉动作…', 'busy');
+        const idolReady = Boolean(this.director?.entries?.get(beatActorId(option.id))?.player?.ready);
+        this.setChatStatus(idolReady ? '正在准备闲聊。' : '正在加载家·教室，并准备制作察觉动作…', 'busy');
         this.elements.script.value = `<beat id="chat-intro" speaker="${option.id}" cue="idle" face="neutral" look="camera" position="center" background="${CHAT_BACKGROUND}" shot="medium" wait="none">……</beat>`;
         this.compile();
         this.chatBridge.requestContext?.()
@@ -391,6 +487,11 @@ export class BeatPlayerApp {
         this.state.playing = true;
         this.updatePlayButton();
         await this.goTo(0, { autoplay: true });
+        if (this.inlineChat) {
+            this.chatState.active = false;
+            if (!this.chatState.pending) this.setChatStatus('');
+            return true;
+        }
         if (this.chatState.active && !this.state.playing && !this.chatState.pending) this.setChatStatus('回复播放完毕，可以继续输入。');
         return true;
     }
@@ -422,11 +523,18 @@ export class BeatPlayerApp {
 
     async sendChatMessage(value) {
         const text = String(value || '').trim();
-        if (!this.chatState.active || !text || this.chatState.pending || this.state.playing) return false;
+        const inline = Boolean(this.inlineChat);
+        if ((!this.chatState.active && !inline) || !text || this.chatState.pending) return false;
+        if (this.state.playing && !inline) return false;
+        if (inline) this.stop();
         const option = this.selectedChatIdol();
+        const background = String(this.chatBackground || CHAT_BACKGROUND).trim() || CHAT_BACKGROUND;
+        const idolHere = typeof this.idolPresent === 'function' ? this.idolPresent() !== false : true;
+        const company = typeof this.companyPresent === 'function' && this.companyPresent() === true;
         let prompt;
         try {
-            prompt = buildChatPrompt({ idolName: option.name, userText: text, background: CHAT_BACKGROUND });
+            const context = typeof this.chatContext === 'function' ? this.chatContext() : String(this.chatContext || '');
+            prompt = buildChatPrompt({ idolName: option.name, userText: text, background, context, present: idolHere, company, staging: Boolean(this.chatStaging), suggestActions: this.suggestActions === true });
         } catch (error) {
             this.setChatStatus(error.message || String(error), 'error');
             return false;
@@ -434,9 +542,10 @@ export class BeatPlayerApp {
         this.appendChatLine('user', text, '你');
         if (this.elements.chatInput) this.elements.chatInput.value = '';
         this.chatState.pending = true;
+        this.chatState.idolPresent = idolHere;
         this.chatState.requestId = `beat-chat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         this.setChatControlsDisabled(true);
-        this.setChatStatus('偶像正在思考…', 'busy');
+        this.setChatStatus(inline ? (idolHere ? `${option.name}正在回复…` : company ? '在场的偶像正在回复…' : '正在整理这段行动…') : '偶像正在思考…', 'busy');
         try {
             if (!this.chatState.saveScope) {
                 const context = await this.chatBridge.requestContext();
@@ -445,6 +554,10 @@ export class BeatPlayerApp {
             const payload = await this.chatBridge.send(prompt, {
                 saveScope: this.chatState.saveScope || `beat-chat-${Date.now()}`,
                 requestId: this.chatState.requestId,
+                ...((idolHere || company) && Number(this.chatReplyTokens) > 0 ? {
+                    maxTokens: this.chatReplyTokens,
+                    timeoutMs: this.chatReplyTimeoutMs,
+                } : {}),
             });
             return this.handleChatReply(payload);
         } catch (error) {
@@ -458,21 +571,37 @@ export class BeatPlayerApp {
     }
 
     handleChatReply(payload) {
-        if (!this.chatState.active || String(payload?.requestId || '') !== String(this.chatState.requestId || '')) return false;
-        const result = normalizeChatReply(payload?.text || payload?.rawText || '', { background: CHAT_BACKGROUND });
+        if ((!this.chatState.active && !this.inlineChat) || String(payload?.requestId || '') !== String(this.chatState.requestId || '')) return false;
+        if (this.inlineChat) {
+            this.chatState.active = true;
+            this.chatState.introPending = false;
+        }
+        const background = String(this.chatBackground || CHAT_BACKGROUND).trim() || CHAT_BACKGROUND;
+        let source = payload?.text || payload?.rawText || '';
+        if (this.chatState.idolPresent === false && typeof this.rewriteAbsentScript === 'function') {
+            source = this.rewriteAbsentScript(source);
+        }
+        if (typeof this.rewriteReplySource === 'function') {
+            const rewritten = this.rewriteReplySource(source);
+            if (typeof rewritten === 'string') source = rewritten;
+        }
+        const result = normalizeChatReply(source, { background, preserveStaging: Boolean(this.preserveChatStaging) });
         this.chatState.pending = false;
         this.chatState.requestId = '';
         this.setChatControlsDisabled(false);
         if (!result.ok) {
+            if (this.inlineChat) this.chatState.active = false;
             this.setChatStatus(result.error || '闲聊回复无法播放。', 'error');
             this.appendChatLine('system', result.error || '闲聊回复无法播放。', '系统');
             return false;
         }
         const replyText = result.beats.map(beat => `${NAME_MAP[beat.speaker] || beat.speaker}：${beat.text}`).join('\n');
-        this.appendChatLine('assistant', replyText, this.selectedChatIdol()?.name || '偶像');
-        this.setChatStatus('正在准备动作和语音…', 'busy');
+        this.appendChatLine('assistant', replyText, this.chatState.idolPresent === false ? '旁白' : (this.selectedChatIdol()?.name || '偶像'));
+        if (typeof this.onSuggestedActions === 'function') this.onSuggestedActions(result.options || []);
+        this.setChatStatus(this.inlineChat ? '' : '正在准备动作和语音…', this.inlineChat ? '' : 'busy');
         this.chatState.introPending = false;
         this.elements.script.value = result.script;
+        if (this.inlineChat) this.prepareInlineChatStage?.();
         this.compile();
         return true;
     }
@@ -819,14 +948,18 @@ export class BeatPlayerApp {
 
     applyShot(beat) {
         const presentation = this.fixedPresentation || resolveBeatShot(this.compiled.beats, this.state.current);
-        const preset = getShotPreset(presentation.shot, presentation.focus);
+        const cameraShot = beat?.camera ? resolveBeatCameraPreset(beat.camera, presentation.shot) : presentation.shot;
+        const effectiveShot = cameraShot === 'keep' ? presentation.shot : cameraShot;
+        const preset = getShotPreset(effectiveShot, presentation.focus);
         const interaction = ['pinch', 'pinch-receive', 'shake', 'shake-receive'].includes(String(beat?.cue || '').toLowerCase());
         const solo = Boolean(preset.focus) && (!interaction || Boolean(this.fixedPresentation));
         this.focusedActor = preset.focus || '';
         const focusedEntry = preset.focus ? this.director.entries.get(preset.focus) : null;
         const scene3d = isBeatScene(beat?.background);
-        this.applyBackground(beat, focusedEntry?.position || 'center');
-        this.elements.stage.dataset.shot = presentation.shot;
+        const platePosition = focusedEntry?.position || 'center';
+        this.applyBackground(beat, platePosition);
+        this.applyFlatBackgroundCamera(scene3d ? '' : beat?.background, preset, platePosition);
+        this.elements.stage.dataset.shot = effectiveShot;
         for (const [idolId, entry] of this.director.entries) {
             if (!entry.canvas) continue;
             const base = stagePositionOffset(entry.position);
@@ -843,22 +976,18 @@ export class BeatPlayerApp {
             entry.canvas.style.visibility = visible ? 'visible' : 'hidden';
             entry.canvas.style.opacity = visible ? '1' : '0';
             entry.player.setPresentationActive?.(visible);
+            const speakerId = beatActorId(beat?.speaker);
+            entry.player.setActorPose?.(beat?.actorPose && idolId === speakerId ? beat.actorPose : null);
         }
         const scenePlayer = focusedEntry?.present && focusedEntry.player.ready ? focusedEntry.player : null;
-        const cameraOptions = {
-            ...(this.fixedCameraOptions || {}),
-            ...((beat?.camera || beat?.cameraMotion) ? {
-            preset: beat.camera || '',
-            motion: beat.cameraMotion || '',
-            duration: beat.cameraDuration || 0,
-            ease: beat.cameraEase || 'out-sine',
-            } : {}),
-        };
-        this.elements.stage.dataset.cameraPreset = cameraOptions.preset || '';
-        this.elements.stage.dataset.cameraMotion = cameraOptions.motion || '';
+        const cameraOptions = { ...(this.fixedCameraOptions || {}) };
+        if (beat?.cameraPose) cameraOptions.pose = beat.cameraPose;
+        this.elements.stage.dataset.cameraPreset = beat?.camera || '';
         this.elements.stage.dataset.cameraLayout = cameraOptions.layout || '';
         this.elements.stage.dataset.cameraZoom = cameraOptions.zoom || '';
-        return this.scenePool.present(beat?.background || '', scenePlayer, presentation.shot, focusedEntry?.position || 'center', cameraOptions) || !scene3d;
+        // `camera` and `shot` are one shared framing channel. Both the 2D plate
+        // and the 3D scene receive the same effective value.
+        return this.scenePool.present(beat?.background || '', scenePlayer, cameraShot, focusedEntry?.position || 'center', cameraOptions) || !scene3d;
     }
 
     buildPreloadPlan(beats) {
@@ -883,22 +1012,32 @@ export class BeatPlayerApp {
         return { cast, cuesById, costumesById };
     }
 
-    async prepareResources(plan, generation) {
+    async prepareResources(plan, generation, { reuse = false, silent = false } = {}) {
         const director = this.director, scenePool = this.scenePool, compiled = this.compiled, backgroundPlan = [...this.backgroundPlan];
         const current = () => generation === this.resourceGeneration;
-        this.resourceLoadingActive = true;
+        const keepStage = reuse && this.resources && !this.resources.disposed;
+        // A visual-only editor change can reuse the prepared stage. Keep the
+        // barrier and compiled beats in sync, but do not flash the full-screen
+        // loading layer while no new asset is expected.
+        const quietReuse = Boolean(silent && keepStage);
+        this.resourceLoadingActive = !quietReuse;
         try {
-            this.resourceLoading.update({ phase: 'checking' });
+            if (!keepStage || !silent) this.resourceLoading.update({ phase: 'checking' });
             const library = await loadResourceLibrary();
             if (generation !== this.resourceGeneration) return false;
             const chatIdolId = this.chatState.active ? beatActorId(this.chatState.idolKey) : '';
             const selected = buildDialogueAssetPlan(compiled, plan, library, {
                 preloadFamiliesById: chatIdolId ? { [chatIdolId]: ['kiduku'] } : {},
             });
-            const resources = this.resources = new ResourceSession(library, { onProgress: progress => {
+            const resources = keepStage ? this.resources : (this.resources = new ResourceSession(library, { onProgress: progress => {
                 if (generation === this.resourceGeneration) this.resourceLoading.update(progress);
-            }});
-            await resources.prepare(selected.keys);
+            }}));
+            if (keepStage) {
+                resources.onProgress = progress => {
+                    if (generation === this.resourceGeneration && !silent && progress?.downloadBytes > 0) this.resourceLoading.update(progress);
+                };
+            }
+            await resources.prepare(selected.keys, { extend: keepStage });
             if (generation !== this.resourceGeneration) return false;
             plan = selected;
             this.preloadPlan = selected;
@@ -917,24 +1056,37 @@ export class BeatPlayerApp {
             ]);
             if (generation !== this.resourceGeneration) return false;
             backgrounds.loaded.forEach((image, name) => this.backgroundImages.set(name, image));
-            for (const entry of director.allEntries().filter(entry => plan.cast.includes(entry.canvas.dataset.idol) && entry.player.ready)) {
-                if (!current()) return false;
-                // Some eye effects are mutually exclusive. Warming their union
-                // silently drops one; prepare each combination actually used.
-                const combinations = [...new Map(compiled.beats.map(beat => {
-                    const effects = [...(beat.effects || [])].sort();
-                    return [JSON.stringify(effects), effects];
-                })).values()];
-                for (const effects of combinations) {
-                    await entry.player.setFacialEffects(effects);
+            const castEntries = director.allEntries().filter(entry => plan.cast.includes(entry.canvas.dataset.idol) && entry.player.ready);
+            const effectCombinations = [...new Map(compiled.beats.map(beat => {
+                const effects = [...(beat.effects || [])].sort();
+                return [JSON.stringify(effects), effects];
+            })).values()].filter(effects => effects.length);
+            // director.preload({ prewarm: true }) already warms every newly
+            // created actor. Only effect variants need a second warm pass; the
+            // old `!keepStage` branch repeated the base actor warmup on every
+            // first multi-actor load.
+            if (castEntries.some(entry => !entry.warmed) || effectCombinations.length) {
+                for (const entry of castEntries) {
                     if (!current()) return false;
-                    await entry.player.prewarm();
-                    if (!current()) return false;
+                    if (!entry.warmed) {
+                        entry.warmed = await entry.player.prewarm();
+                    }
+                    // Some eye effects are mutually exclusive. Prepare each
+                    // non-empty combination actually used by the sequence.
+                    for (const effects of effectCombinations) {
+                        await entry.player.setFacialEffects(effects);
+                        if (!current()) return false;
+                        await entry.player.prewarm();
+                        if (!current()) return false;
+                    }
+                    await entry.player.setFacialEffects([]);
                 }
-                await entry.player.setFacialEffects([]);
+                if (!current()) return false;
             }
-            if (!current()) return false;
-            await scenePool.warmPlayers(director.allEntries().filter(entry => plan.cast.includes(entry.canvas.dataset.idol) && entry.player.ready).map(entry => entry.player), backgroundPlan, current);
+            // Scene materials are owned by each actor renderer and still need
+            // their first-load shader/texture warmup. Keep this independent of
+            // actor warmup so removing the duplicate actor pass is safe.
+            if (!keepStage) await scenePool.warmPlayers(castEntries.map(entry => entry.player), backgroundPlan, current);
             if (!current()) return false;
             const allReady = ready && backgrounds.ready && scenesReady && portraitsReady;
             if (!allReady) throw new Error('角色、动作、背景或场景未能完整加载，请重试。');
@@ -1054,8 +1206,33 @@ export class BeatPlayerApp {
         this.renderPortrait(beat);
         const presentation = beat ? (this.fixedPresentation || resolveBeatShot(this.compiled.beats, current)) : null;
         this.elements.shot.textContent = beat
-            ? `镜头：` + presentation.shot + (beat.camera ? ' · 构图 ' + beat.camera : '') + (beat.cameraMotion ? ' · 运动 ' + beat.cameraMotion : '') + (presentation.inherited ? '（沿用上一位偶像）' : '')
+            ? `镜头：` + presentation.shot + (beat.camera ? ' · camera ' + beat.camera : '') + (presentation.inherited ? '（沿用上一位偶像）' : '')
             : '镜头：—';
+    }
+
+    applyFlatBackgroundCamera(name, preset, position = 'center') {
+        const node = this.elements.background;
+        if (!node) return;
+        if (!name || isBeatScene(name)) {
+            node.style.backgroundSize = '';
+            node.style.filter = '';
+            return;
+        }
+        const image = this.backgroundImages.get(name);
+        const viewW = this.elements.stage?.clientWidth || image?.width || 1;
+        const viewH = this.elements.stage?.clientHeight || image?.height || 1;
+        const blur = backgroundDepthBlur(preset?.scale);
+        const zoom = (Number(preset?.scale) || 1) * (blur ? 1.08 : 1);
+        const cover = zoomPlateCover(
+            stagePlateCover(viewW, viewH, image?.width || viewW, image?.height || viewH, backgroundPanAmount(position), 0.5),
+            zoom,
+            0.5,
+            preset?.originY ?? 0.5,
+        );
+        const css = plateCoverToBackground(cover);
+        node.style.backgroundSize = css.size;
+        node.style.backgroundPosition = css.position;
+        node.style.filter = `blur(${blur}px)`;
     }
 
     applyBackground(beat, position = 'center') {
@@ -1121,3 +1298,4 @@ if (/\/beat-player\.html$/i.test(window.location.pathname)) {
     }
     window.addEventListener('beforeunload', () => app.dispose(), { once: true });
 }
+

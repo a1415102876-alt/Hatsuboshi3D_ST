@@ -1,4 +1,4 @@
-import { parseBeatScript } from '../mmd-dialogue-stage/beat-protocol.js?v=20261014-npc-portraits-v1';
+import { parseBeatScript } from '../mmd-dialogue-stage/beat-protocol.js?v=20261102-krnh-3d-v1';
 import { liveBeatSpeaker } from './nia-live-beat-core.js?v=20261014-live-close-v1';
 
 const xml = value => String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');

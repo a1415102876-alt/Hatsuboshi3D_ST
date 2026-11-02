@@ -165,6 +165,10 @@ export class HairCoverStage {
             if (!outline?.enabled || this.outlining) return;
             this.outlining = true;
             try {
+                // The mesh was already drawn with the jittered TAA camera.
+                // The outline has to use that same projection. Drawing it with
+                // the stable camera leaves the one-pixel shell on the
+                // unjittered grid, and the resolve then slides it every frame.
                 outline.renderOutline(scene, camera);
             } finally {
                 this.outlining = false;

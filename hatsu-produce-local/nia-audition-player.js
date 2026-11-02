@@ -1,4 +1,4 @@
-import { beatActorId } from '../mmd-dialogue-stage/beat-player-core.js?v=20261014-npc-portraits-v1';
+import { beatActorId } from '../mmd-dialogue-stage/beat-player-core.js?v=20261102-krnh-3d-v1';
 
 export class NiaAuditionSuccessPlayer {
     constructor(host, options = {}) { this.host = host; this.options = options; this.generation = 0; }

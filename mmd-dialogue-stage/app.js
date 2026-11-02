@@ -1,5 +1,5 @@
 import { installAuditionEmbed, auditionParentOrigin } from './audition-embed.js?v=20261017-audition-origin-v3';
-import { loadResourceLibrary, ResourceSession } from './asset-runtime.js';
+import { loadResourceLibrary, ResourceSession } from './asset-runtime.js?v=20261102-krnh-profile-v1';
 import { buildAuditionAssetPlan } from './dialogue-asset-plan.js';
 let auditionResources = null;
 import * as THREE from 'three';
@@ -7,6 +7,7 @@ import { AuditionCameraPlayer } from './audition-camera.js?v=20261015-success-co
 import { auditionSuccessPreset, validateAuditionSuccessTrack, auditionSuccessScene } from './audition-success.js?v=20261015-nia-audition-scene-v2';
 import { bindGlbMorphTracks } from './glb-morph-tracks.js?v=20260929-face-primitives-v1';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { createStagePlacementControls } from './stage-placement-controls.js?v=20261026-placement-gizmo-v1';
 import { MMDLoader } from 'three/addons/loaders/MMDLoader.js?v=20260909-outline1';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MMDAnimationHelper } from 'three/addons/animation/MMDAnimationHelper.js';
@@ -16,16 +17,18 @@ import { LIBRARY_R2_KEY, LIBRARY_SOURCE_KEY, idolAssetUrls, libraryFileUrl, moti
 import { GAKUMAS_TEXTURE_KINDS, GAKUMAS_ACTIVE_TEXTURE_KINDS, selectMaterialTextures, textureDescriptor, textureUsesColorSpace, setTextureColorSpace } from './gakumas-materials.js?v=20261007-solo1-rampadd-v1';
 import { injectActorShader } from './gakumas-shader.js?v=20261004-key-view-v1';
 import { actorStencilState, classifyActorPass, placeCharacterShadowLight, shouldCastCharacterShadow, shouldReceiveCharacterShadow } from './gakumas-passes.js?v=20261024-crowd-budget-v1';
-import { HairCoverStage } from './gakumas-hair-cover.js?v=20261005-hair-outline-v1';
-import { GakumasSceneStage } from './gakumas-scene.js?v=20261023-activity-zones-v1';
-import { GakumasPostPass } from './gakumas-post.js?v=20261004-beat-taa-v2';
+import { HairCoverStage } from './gakumas-hair-cover.js?v=20261027-taa-outline-v1';
+import { GakumasSceneStage } from './gakumas-scene.js?v=20261028-block-boxes-v1';
+import { GakumasPostPass } from './gakumas-post.js?v=20261028-taa-supersample-v1';
+import { motionFromPositions } from './gakumas-taa-motion.js?v=20261027-motion-aware-taa-v1';
 import { GAKUMAS_LOOK, GakumasLookPass, applyGakumasLookUniforms, createGakumasLookUniformValues, matcapKeyDirection } from './gakumas-look.js?v=20261004-key-az60-v1';
 import { hasGakumasVertexColorAttribute } from './gakumas-outline.js?v=20260929-packed-color';
 import { FacialEffectsStage } from './facial-effects-stage.js?v=20261017-browser-cache-v1';
-import { SecondaryMotion, applyHairRestRotationRebase, rebaseHairAnimationTracks, refreshRestInverseBinds } from './gakumas-secondary-motion.js?v=20261010-left-front-hair-gap-v1';
+import { SecondaryMotion, applyHairRestRotationRebase, rebaseHairAnimationTracks, refreshRestInverseBinds } from './gakumas-secondary-motion.js?v=20261102-krnh-sleeve-gravity-v1';
 import { buildStageBoneTraceFrame, createStageBoneTrace } from './stage-bone-trace.js?v=20260927-stage-bone-trace-v1';
 import { identifyLibraryIdol, supportsSecondaryMotion, motionMatchesIdol } from './idol-library.js?v=20260912-all-idols';
 import { bindVisemeMorphs, estimateVisemeTrack, faceCueLabel, gestureCueLabel, isFacialNoiseMorph, parseAiCue, restoreVisemeInfluences, shouldClearFacialNoise, snapshotVisemeInfluences, visemeWeightAt, allVisemeBindingTargets, visemeBindingTargets } from './dialogue-intent.js?v=20261011-emotion-cue-labels-v2';
+import { filterPreferredSitItems } from './seated-posture.js?v=20261027-seated-rollback-v1';
 
 const $ = selector => document.querySelector(selector);
 const state = {
@@ -83,6 +86,10 @@ const state = {
 // secondary-motion table and the PMX stage use the authored stage unit. The
 // HSKI Unity export is approximately 125 times smaller than that stage.
 const GLB_STAGE_SCALE = 12.5;
+const TAA_SAMPLE_BONES = ['Head', 'LeftHand', 'RightHand', 'LeftFoot', 'RightFoot', 'LeftShoulder', 'RightShoulder'];
+const taaMotionScratch = new THREE.Vector3();
+let taaMotionTarget = null;
+let taaPreviousPositions = [];
 const sceneModelFrames = new WeakMap();
 const clock = new THREE.Clock();
 const hairCoverStage = new HairCoverStage();
@@ -307,11 +314,12 @@ function modelVariantId(modelKey) {
 const secondaryMotionReady = (profileKey, fallbackId = '') => {
     if (auditionResources) {
         const entry = auditionResources.manifest.profiles.find(item => item.modelKey === profileKey || item.aliases?.includes(profileKey));
-        return auditionResources.fetch(new URL(entry?.profile || `secondary-motion-profiles/${fallbackId || profileKey}.json`, import.meta.url).href).then(response => response.json());
+        const profilePath = entry?.profile || `secondary-motion-profiles/${fallbackId || profileKey}.json`;
+        return auditionResources.fetch(new URL(`${profilePath}?v=20261102-krnh-sleeve-gravity-v1`, import.meta.url).href).then(response => response.json());
     }
     const key = profileKey || fallbackId || 'fallback';
     if (secondaryMotionTables.has(key)) return secondaryMotionTables.get(key);
-        const request = fetch(`./secondary-motion-manifest.json?v=20261013-solo1-secondary-v1`)
+        const request = fetch(`./secondary-motion-manifest.json?v=20261026-hair-contact-v1`)
         .then(response => response.ok ? response.json() : null)
         .catch(() => null)
         .then(manifest => {
@@ -320,7 +328,7 @@ const secondaryMotionReady = (profileKey, fallbackId = '') => {
             const profileUrl = entry?.profile
                 ? `./${String(entry.profile).replace(/^\.\//, '')}`
                 : `./secondary-motion-profiles/${encodeURIComponent(fallbackId || profileKey || 'fktn')}.json`;
-            return fetch(`${profileUrl}?v=20261013-solo1-secondary-v1`)
+            return fetch(`${profileUrl}?v=20261102-krnh-sleeve-gravity-v1`)
                 .then(response => response.ok ? response.json() : fetch(`./gakumas-secondary-motion.json?v=20261006-nasr-casl-hair-profile-v1`).then(fallback => {
                     if (!fallback.ok) throw new Error(fallback.statusText);
                     return fallback.json();
@@ -433,6 +441,23 @@ scene.add(grid);
 const sceneStage = new GakumasSceneStage({ scene, scale: GLB_STAGE_SCALE });
 const DEFAULT_CAMERA_FOV = camera.fov;
 let gridWanted = true;
+const placementEditor = createStagePlacementControls({
+    scene, stage: sceneStage, camera, canvas, orbit: controls, scale: GLB_STAGE_SCALE,
+    getActorInfo: () => {
+        const entry = state.library.config?.scenes?.find(item => sceneSourceName(item) === sceneStage.sidecar?.scene);
+        return { sceneLibraryId: entry?.id || '', sceneLabel: entry ? sceneDisplayLabel(entry) : '场景', idolId: state.library.activeIdol, modelName: state.model?.name || '', motionId: state.activeAction };
+    },
+    selectScene: selectStageScene,
+    refreshScene: () => { renderSceneLayoutOptions(); syncScenePost(); renderSceneStatus(); },
+    beforeEdit: () => exitAuditionPreview({ pause: true }),
+    frameActor: () => { if (state.model) frameModel(state.model); },
+    onChange: () => {
+        secondaryMotion.reset();
+        if (state.model) fitCharacterShadowToModel(state.model);
+        postPass.resetHistory = true;
+    },
+    notify: showToast,
+});
 
 resetCamera();
 buildExpressionButtons();
@@ -662,6 +687,7 @@ function bindUi() {
     $('#sceneSelect')?.addEventListener('change', event => selectStageScene(event.currentTarget.value));
     $('#sceneLayout')?.addEventListener('change', event => {
         if (!sceneStage.applyLayout(event.currentTarget.value)) return;
+        placementEditor.reset();
         applySceneCamera();
         syncScenePost();
         renderSceneStatus();
@@ -952,7 +978,7 @@ async function loadModelFromSource({ name, url, textures, fileMapFiles, idolId, 
             const oldTarget = state.animationTarget || state.model;
             if (state.helper.objects.has(oldTarget)) state.helper.remove(oldTarget);
             state.animationMixer = null;
-            scene.remove(state.model);
+            state.model.removeFromParent();
             disposeObject(state.model);
         }
         state.model = model;
@@ -1007,7 +1033,7 @@ async function loadModelFromSource({ name, url, textures, fileMapFiles, idolId, 
                 });
             }
         });
-        scene.add(model);
+        placementEditor.attachModel(model);
         captureSceneModelFrame(model);
         await loadGakumasTextures(textures || []);
         if (generation !== modelLoadGeneration) return false;
@@ -1018,7 +1044,8 @@ async function loadModelFromSource({ name, url, textures, fileMapFiles, idolId, 
         fitCharacterShadowToModel(model);
         if (state.modelFormat !== 'glb') state.helper.add(state.animationTarget, { physics: false });
         frameModel(model);
-        if (sceneStage.sidecar?.layouts?.[sceneStage.layoutId]?.genericShot) applySceneCamera();
+        const sceneLayout = sceneStage.sidecar?.layouts?.[sceneStage.layoutId];
+        if (sceneLayout?.genericShot || sceneLayout?.calibratedPlacement) applySceneCamera();
         renderMorphControls();
         bindLipSyncMorphs();
         renderMotionLibrary();
@@ -1957,6 +1984,7 @@ async function prepareAuditionScene(isCurrent) {
     }
     if (!isCurrent()) return false;
     if (!sceneStage.applyLayout(entry.auditionSuccessLayout)) throw new Error('N.I.A 结果站位缺失');
+    placementEditor.reset();
     const select = $('#sceneSelect');
     if (select) select.value = entry.id;
     renderSceneOptions();
@@ -2068,7 +2096,7 @@ async function ensureIdleMotion({ play = false } = {}) {
 
 function catalogItems() {
     const buckets = state.library.map?.buckets || [];
-    return buckets.flatMap(bucket => bucket.families.flatMap(family => family.items.map(item => {
+    return filterPreferredSitItems(buckets.flatMap(bucket => bucket.families.flatMap(family => family.items.map(item => {
         const parsed = classifyMotionName(item.stem || item.label || item.body || item.face || '');
         const pairing = item.pairing || '';
         const resolvedBucket = pairing === 'bodyOnly' ? 'bodyOnly' : pairing === 'faceOnly' ? 'faceOnly' : (parsed.intentBucket || bucket.id);
@@ -2089,7 +2117,7 @@ function catalogItems() {
                 additive: item.additive,
             },
         };
-    }))).filter(item => motionMatchesIdol(item, state.library.activeIdol));
+    }))).filter(item => motionMatchesIdol(item, state.library.activeIdol)));
 }
 
 function makeAdditiveClip(clip) {
@@ -2297,9 +2325,9 @@ function motionMatchesSearch(item, query) {
 
 function rebuildPlaylist() {
     const previous = state.playlistIndex >= 0 ? state.playlist[state.playlistIndex]?.key : '';
-    state.playlist = sortPlaylistByCatalog(buildPlaylist([...state.actions.values()]
+    state.playlist = sortPlaylistByCatalog(filterPreferredSitItems(buildPlaylist([...state.actions.values()]
         .filter(entry => !entry.additive)
-        .map(({ id, label, kind }) => ({ id, label, kind }))));
+        .map(({ id, label, kind }) => ({ id, label, kind })))));
     state.playlistIndex = previous ? state.playlist.findIndex(item => item.key === previous) : -1;
     renderMotionLibrary();
 }
@@ -2650,6 +2678,45 @@ function currentMixer() {
         : state.helper.objects.get(state.animationTarget || state.model)?.mixer;
 }
 
+function stageSampledBoneMotion() {
+    const target = state.animationTarget || state.model;
+    if (!target) {
+        taaMotionTarget = null;
+        taaPreviousPositions = [];
+        return 0;
+    }
+    if (target !== taaMotionTarget) {
+        taaMotionTarget = target;
+        taaPreviousPositions = [];
+    }
+    const bones = state.skeletonBones?.length
+        ? state.skeletonBones
+        : target.skeleton?.bones || state.model?.skeleton?.bones || [];
+    const byName = new Map(bones.map(bone => [bone.name, bone]));
+    const current = TAA_SAMPLE_BONES
+        .map(name => byName.get(name))
+        .filter(Boolean)
+        .map(bone => {
+            bone.getWorldPosition(taaMotionScratch);
+            return [taaMotionScratch.x, taaMotionScratch.y, taaMotionScratch.z];
+        });
+    const motion = motionFromPositions(current, taaPreviousPositions, 18);
+    taaPreviousPositions = current;
+    return motion;
+}
+
+function stageTaaMotionHint() {
+    // The browser renderer does not have the game's per-pixel MotionVector
+    // buffer yet. Report a conservative object-level signal so animated
+    // silhouettes and camera cuts reject stale history instead of smearing.
+    const mixer = currentMixer();
+    const sampledMotion = stageSampledBoneMotion();
+    if (auditionCamera.active && state.playing) return 0.82;
+    if (state.playing || (state.additiveAction && mixer?.timeScale !== 0)) return Math.max(0.22, sampledMotion);
+    if (state.fadingActions.length) return 0.2;
+    return sampledMotion;
+}
+
 function clipKind(clipId) {
     return state.actions.get(clipId)?.kind || '';
 }
@@ -2691,7 +2758,15 @@ function playPlaylistIndex(index, options = {}) {
     if (!item || !state.model) return false;
     const fromItem = state.playlistIndex >= 0 ? state.playlist[state.playlistIndex] : null;
     const clipIds = resolvePlayClipIds(item, fromItem, options);
-    const clips = clipIds.map(clipId => ({ id: clipId, clip: state.actions.get(clipId)?.clip, kind: clipKind(clipId) })).filter(entry => entry.clip);
+    const clips = clipIds.map(clipId => {
+        const source = state.actions.get(clipId)?.clip;
+        const kind = clipKind(clipId);
+        return {
+            id: clipId,
+            clip: source,
+            kind,
+        };
+    }).filter(entry => entry.clip);
     if (!clips.length) return false;
 
     const mixer = ensureMixer();
@@ -3183,6 +3258,7 @@ function renderSceneLayoutOptions() {
     select.value = sceneStage.layoutId;
     select.disabled = !options.length;
     $('#sceneCameraBtn').disabled = !options.length;
+    placementEditor.refresh();
 }
 
 function renderSceneStatus(text) {
@@ -3256,6 +3332,7 @@ function applySceneCamera(options = {}) {
 async function selectStageScene(sceneId, options = {}) {
     if (options.isCurrent && !options.isCurrent()) return null;
     if (!options.auditionPreview) exitAuditionPreview();
+    placementEditor.reset();
     const generation = ++stageSceneGeneration;
     const isCurrent = () => generation === stageSceneGeneration && (!options.isCurrent || options.isCurrent());
     const entry = (state.library.config?.scenes || []).find(item => item.id === sceneId);
@@ -3322,7 +3399,10 @@ function animate() {
         flushPendingFinish();
         applyPerformanceOverlays();
         facialEffects.update(delta);
-        state.model.updateMatrixWorld(true);
+        // Motion diagnostics read local bone transforms. SecondaryMotion refreshes
+        // the ancestor paths it needs before solving, so a full model traversal
+        // here only duplicates the post-solver refresh below.
+        state.model.updateWorldMatrix?.(true, false);
         captureStageBoneTraceFrame('input');
         // Match HskiHairPortRunner.Update: animation has been sampled above;
         // the fixed-step solver now writes secondary bones before rendering.
@@ -3339,14 +3419,17 @@ function animate() {
     resizeRenderer();
     sceneStage.ensureCameraRange(camera);
     if (state.materialMode === 'gakumas') {
-        state.model?.updateMatrixWorld(true);
         camera.updateMatrixWorld();
         updateGakumasUniforms();
     }
     const draw = () => hairCoverStage.renderFrame(renderer, outlineEffect, scene, camera, state.materialMode === 'gakumas' && state.gakumasPasses.hairCover);
-    if (sceneStage.loaded && postPass.active) postPass.render(draw, camera);
+    if (sceneStage.loaded && postPass.active) {
+        postPass.setMotionHint(stageTaaMotionHint());
+        postPass.render(draw, camera, { velocityRoot: scene });
+    }
     else if (lookPass.enabled) lookPass.render(draw);
     else draw();
+    placementEditor.renderOverlay(renderer);
 }
 
 function resizeRenderer() {
@@ -3418,3 +3501,4 @@ function disposeObject(object) {
         });
     });
 }
+

@@ -1,5 +1,5 @@
-import { beatActorId } from '../mmd-dialogue-stage/beat-player-core.js?v=20261014-npc-portraits-v1';
-import { parseBeatScript } from '../mmd-dialogue-stage/beat-protocol.js?v=20261014-npc-portraits-v1';
+import { beatActorId } from '../mmd-dialogue-stage/beat-player-core.js?v=20261102-krnh-3d-v1';
+import { parseBeatScript } from '../mmd-dialogue-stage/beat-protocol.js?v=20261102-krnh-3d-v1';
 
 const clampInteger = (value, min, max) => Math.min(max, Math.max(min, Math.round(Number(value) || 0)));
 const text = (value, limit = 600) => String(value || '').trim().slice(0, limit);

@@ -13234,6 +13234,77 @@ body.is-free-mode-active {
 
 .vn-beat-host.is-beat-finished .beat-speaker-portrait { display: none; }
 
+/* Desktop Beat overlay: the host fills the browser viewport instead of
+   keeping the portrait 9:16 stage. Mobile keeps the original portrait rule
+   above and the narrower media queries below. */
+@media (min-width: 761px) {
+  .vn-beat-host {
+    align-items: stretch;
+    justify-content: stretch;
+  }
+
+  .vn-beat-host .beat-stage {
+    width: 100% !important;
+    height: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    aspect-ratio: auto !important;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .vn-beat-host .story-chrome {
+    padding: 0 clamp(24px, 4vw, 72px) clamp(18px, 3vh, 36px);
+  }
+
+  .vn-beat-host .dialogue-card {
+    width: min(100%, 1180px);
+    max-height: min(34vh, 300px);
+    margin-inline: auto;
+    overflow: auto;
+  }
+
+  .vn-beat-host .beat-chat-composer,
+  .vn-beat-host .beat-choices,
+  .vn-beat-host .player-toolbar {
+    width: min(100%, 1180px);
+    margin-inline: auto;
+  }
+}
+
+/* Runtime fallback for ST's injected page wrapper.  The class is applied by
+   app.js after vnBeatHost becomes visible, so the embedded Beat keeps a true
+   viewport-sized stage even when the surrounding page was initially portrait.
+ */
+.vn-beat-host.is-desktop-beat {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100dvh !important;
+  max-width: none !important;
+  max-height: none !important;
+  align-items: stretch !important;
+  justify-content: stretch !important;
+}
+/* The fixed stage is a scaled 1600×900 canvas. Viewport units stay tied to
+   the browser window, so the same host has to fill its parent instead. */
+html.hatsu-fixed-stage-active .vn-beat-host.is-desktop-beat {
+  position: absolute !important;
+  width: 100% !important;
+  height: 100% !important;
+}
+.vn-beat-host.is-desktop-beat .beat-stage {
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+.vn-beat-host.is-desktop-beat .story-chrome {
+  box-sizing: border-box;
+  width: 100%;
+  max-height: 48vh;
+  overflow: visible;
+}
+
 /* Beat replaces only the live picture, leaving broadcast chrome and controls intact. */
 .nia-live-beat-stage{position:absolute;z-index:1;inset:0;overflow:hidden;isolation:isolate}
 .nia-live-beat-background{position:absolute;z-index:0;inset:0;background-position:center;background-size:cover;background-repeat:no-repeat}

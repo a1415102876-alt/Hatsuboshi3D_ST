@@ -1,4 +1,4 @@
-import { BeatPlayerApp } from './beat-player.js?v=20261024-idle-chat-v2';
+import { BeatPlayerApp } from './beat-player.js?v=20261030-perf-diagnostic-v2';
 import { createLocalChatBridge } from './beat-chat.js?v=20261024-worldbook-v1';
 import { loadTavernWorldbook } from './worldbook-scan.js?v=20261024-worldbook-v1';
 import { applyFishTtsSettings, fishTtsStatus, resolveFishTtsSettings } from './free-chat-tts.js?v=20261024-tts-v1';
@@ -108,7 +108,7 @@ function fillSettings(stored) {
     field('chatSystemPrompt').value = stored.systemPrompt || DEFAULT_SYSTEM_PROMPT;
     field('chatWorldbook').value = stored.worldbook ?? DEFAULT_WORLDBOOK;
     const settings = field('chatSettings');
-    if (settings) settings.open = !stored.baseUrl || !stored.model;
+    if (settings) settings.open = false;
 }
 
 function restoreChatLog(app, idolName) {
@@ -150,8 +150,62 @@ const enterChatMode = app.enterChatMode.bind(app);
 app.enterChatMode = idolKey => {
     const entered = enterChatMode(idolKey);
     restoreChatLog(app, selectedIdolName());
+    const drawer = field('chatEditorPanel');
+    if (drawer) drawer.hidden = true;
+    document.body.classList.remove('is-chat-active');
     return entered;
 };
+
+let homeToastTimer = 0;
+function showHomeToast(message) {
+    const toast = field('homeToast');
+    if (!toast) return;
+    toast.textContent = String(message || '');
+    toast.classList.add('is-visible');
+    clearTimeout(homeToastTimer);
+    homeToastTimer = setTimeout(() => toast.classList.remove('is-visible'), 2200);
+}
+
+function syncHomeIdolName() {
+    const label = field('homeIdolName');
+    if (label) label.textContent = selectedIdolName() || '担当偶像';
+}
+
+document.querySelectorAll('[data-home-action]').forEach(button => {
+    button.addEventListener('click', () => {
+        const action = button.dataset.homeAction || '';
+        const label = button.dataset.homeLabel || '入口';
+        if (action === 'chat') {
+            const drawer = field('chatEditorPanel');
+            if (drawer) drawer.hidden = false;
+            document.body.classList.add('is-chat-active');
+            field('chatInput')?.focus();
+            showHomeToast('已打开担当闲聊');
+            return;
+        }
+        if (action === 'home') {
+            showHomeToast('当前已经在主页');
+            return;
+        }
+        showHomeToast(`${label}入口样板，后续接入对应功能`);
+    });
+});
+
+field('homeChatClose')?.addEventListener('click', () => {
+    const drawer = field('chatEditorPanel');
+    if (drawer) drawer.hidden = true;
+    document.body.classList.remove('is-chat-active');
+});
+
+field('homeSettingsBtn')?.addEventListener('click', () => {
+    const settings = field('chatSettings');
+    if (settings) settings.open = !settings.open;
+});
+
+field('chatIdolSelect')?.addEventListener('change', () => {
+    syncHomeIdolName();
+    showHomeToast(`正在进入${selectedIdolName()}的主页`);
+});
 
 for (const id of ['chatApiBase', 'chatApiKey', 'chatApiModel', 'chatApiTemperature', 'chatApiMaxTokens', 'chatSystemPrompt', 'chatWorldbook']) {
     field(id)?.addEventListener('change', saveSettings);
@@ -168,6 +222,7 @@ field('clearChatBtn')?.addEventListener('click', () => {
 });
 
 app.enterChatMode(field('chatIdolSelect')?.value || 'kotone');
+syncHomeIdolName();
 loadHatsuboshiWorldbook();
 window.freeChat = app;
 window.addEventListener('beforeunload', () => {
@@ -175,3 +230,4 @@ window.addEventListener('beforeunload', () => {
     app.dispose();
     bridge.dispose();
 }, { once: true });
+

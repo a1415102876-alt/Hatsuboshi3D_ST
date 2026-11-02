@@ -274,6 +274,16 @@
       "textureDir": "Texture2D",
       "note": "已导出CASL-0000；使用亚纱里专属二次运动 profile，动作暂使用通用资源",
       "secondaryMotionProfile": "nasr-casl-0000"
+    },
+    {
+      "id": "krnh",
+      "name": "贺阳燐羽",
+      "outfit": "CASL",
+      "pack": "idols/krnh",
+      "model": "krnh-casl.glb",
+      "textureDir": "Texture2D",
+      "note": "已导出CASL；Gakumas Shader补充贴图已接入；GLB 专用 krnh-casl 二次运动 profile 已接入（本次 capture 未验证原生算法执行与 Transform 写回）",
+      "secondaryMotionProfile": false
     }
   ],
   "packs": {
@@ -404,6 +414,10 @@
     "idols/nasr": {
       "root": "E:/gakumas-pmx-workflow/output/nasr-casl-0000",
       "r2Prefix": "idols/nasr"
+    },
+    "idols/krnh": {
+      "root": "G:/SillyTavern/SillyTavern/public/mmd-dialogue-stage/library/file/idols/krnh",
+      "r2Prefix": "idols/krnh"
     },
     "idols/fktn-solo1": {
       "root": "G:\\SillyTavern\\SillyTavern\\public\\mmd-dialogue-stage\\library\\file\\idols\\fktn-solo1",

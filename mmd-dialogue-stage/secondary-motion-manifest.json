@@ -696,6 +696,26 @@
         "rest": "G:\\SillyTavern\\SillyTavern\\tools\\gakumas-vmd-prototype\\variant-candidates\\solo1-20261013\\atbm-cstm-0106\\glb-rest.json",
         "report": "G:\\SillyTavern\\SillyTavern\\tools\\gakumas-vmd-prototype\\variant-candidates\\solo1-20261013\\atbm-cstm-0106\\authored.json"
       }
+    },
+    {
+      "modelKey": "krnh-casl",
+      "aliases": [
+        "krnh-casl-glb-hair-layer"
+      ],
+      "idolId": "krnh",
+      "outfitId": "casl",
+      "glb": "E:\\gakumas-pmx-workflow\\output\\krnh-casl\\krnh-casl.glb",
+      "profile": "secondary-motion-profiles/krnh-casl.json",
+      "profileId": "krnh-casl",
+      "glbSha256": "22533B2709A24D7E9C01D567F2126FCDA43982228E83EC442C37F0BEB8C8924B",
+      "boneSignature": "DE0321630DF5125C400FFBD3E2E4224901BB05EB3218CDAE6697FDDC2C8FF866",
+      "source": {
+        "body": "mdl_chr_krnh-casl-0000_body",
+        "face": "mdl_chr_krnh-base-0000_face",
+        "hair": "mdl_chr_krnh-base-0000_hair",
+        "pmx": null,
+        "skeleton": "G:/SillyTavern/SillyTavern/tools/gakumas-vmd-prototype/krnh-candidate-20261102/skeletons/krnh-casl.json"
+      }
     }
   ]
 }

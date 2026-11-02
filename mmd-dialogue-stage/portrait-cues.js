@@ -2,7 +2,7 @@ import { PAIRED_CUES, BODY_ONLY_CUES, FACE_ONLY_CUES } from './dialogue-intent.j
 import { DEFAULT_MOTION_VARIANTS, findFacePlaylistIndex, findGesturePlaylistIndex, gesturePlaylistCandidateIndices } from './core.js?v=20261011-weighted-cues-v2';
 import { isLivePortraitSpeaker } from './live-portrait-policy.js';
 import { sceneIdolId, buildStageRules } from './scene-protocol.js';
-import { isBeatMotionCandidate, isBeatMotionEligible, isBeatPairedCue, parseBeatCueToken } from './beat-cues.js?v=20261011-stage-cue-rules-v4';
+import { beatMotionFileKey, isBeatMotionCandidate, isBeatMotionEligible, isBeatPairedCue, parseBeatCueToken } from './beat-cues.js?v=20261101-motion-file-v1';
 export { sceneIdolId, buildStageRules, splitStageStory, parseStageTag, stageSnapshot, detectSceneCast } from './scene-protocol.js';
 
 function canonicalWords(table) {
@@ -51,8 +51,21 @@ function performanceCatalog(cue, catalog, idolId) {
     return { eligible, bodies: selectedCandidates, pairing };
 }
 
+function selectMotionFile(cue, catalog) {
+    const key = beatMotionFileKey(cue?.file);
+    if (!key) return null;
+    const item = catalog.find(entry => [entry.label, entry.stem, entry.body, entry.face, entry.key]
+        .some(name => beatMotionFileKey(name) === key));
+    if (!item) return null;
+    if (item.body && item.face) return { ...item, key: `${item.body}|${item.face}`, face: item.face, pairing: item.pairing || 'paired' };
+    if (item.body) return { ...item, key: item.body, face: '', pairing: 'bodyOnly' };
+    if (item.face) return { ...item, key: item.face, body: '', face: item.face, pairing: 'faceOnly' };
+    return null;
+}
+
 export function selectPortraitPerformance(cue, catalog, idolId = 'fktn', options = {}) {
     if (!cue || cue.mode === 'keep') return null;
+    if (cue.mode === 'file') return selectMotionFile(cue, catalog);
     const { eligible, bodies, pairing } = performanceCatalog(cue, catalog, idolId);
     const avoidBody = String(options.avoidBody || '');
     const avoidBodyKey = bodies.find(item => String(item.body || '') === avoidBody)?.stem
@@ -92,6 +105,10 @@ export function selectPortraitPerformance(cue, catalog, idolId = 'fktn', options
 // causes an on-demand VMD fetch when a Beat is already on screen.
 export function portraitPerformanceCandidates(cue, catalog, idolId = 'fktn') {
     if (!cue || cue.mode === 'keep') return [];
+    if (cue.mode === 'file') {
+        const item = selectPortraitPerformance(cue, catalog, idolId);
+        return item ? [item] : [];
+    }
     const { eligible, bodies, pairing } = performanceCatalog(cue, catalog, idolId);
     const indices = gesturePlaylistCandidateIndices(bodies, cue.gesture, idolId, {
         preferPairing: pairing, preferredVariant: DEFAULT_MOTION_VARIANTS[idolId] || '',

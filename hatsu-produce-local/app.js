@@ -17,7 +17,7 @@
 
   const clone = (value) => JSON.parse(JSON.stringify(value));
   const vnLivePortraitState = {
-    moduleUrl: "/mmd-dialogue-stage/live-portrait.js?v=20261024-crowd-budget-v1",
+    moduleUrl: "/mmd-dialogue-stage/live-portrait.js?v=20261102-actor-pose-v1",
     director: null,
     sceneSession: 0,
     sceneLoad: null,
@@ -19642,6 +19642,7 @@ ${buildChoiceOnlyExample(true)}`;
       const choices = document.getElementById("vnChoicesOverlay");
       if (choices) choices.style.display = "none";
       host.hidden = false;
+      syncKotoneBeatViewport(host, kotoneBeatApp);
       ensureKotoneBeatApp().then((chatApp) => {
         if (!chatApp || eventOverlay.hidden) return;
         chatApp.enterChatMode(state.idol || document.getElementById("chatIdolSelect")?.value || "");
@@ -25924,7 +25925,7 @@ ${outputContract("请写 900 字以内的完整校内傍晚场景，从抵达到
   async function ensureNiaLiveBeatPlayer() {
     if (niaLiveBeatPlayer) return niaLiveBeatPlayer;
     if (!niaLiveBeatPlayerLoad) {
-      const url = new URL("nia-live-beat-player.js?v=20261024-crowd-budget-v1", window.HATSU_ASSET_BASE || document.baseURI).href;
+      const url = new URL("nia-live-beat-player.js?v=20261102-actor-pose-v1", window.HATSU_ASSET_BASE || document.baseURI).href;
       niaLiveBeatPlayerLoad = import(url).then(({ NiaLiveBeatPlayer }) => {
         const stage = niaLiveEl("niaLiveBeatStage");
         const caption = niaLiveEl("niaLiveCaption");
@@ -26965,7 +26966,7 @@ ${outputContract("请写 900 字以内的完整校内傍晚场景，从抵达到
   async function ensureNiaRadioBeatPlayer() {
     if (niaRadioBeatPlayer) return niaRadioBeatPlayer;
     if (!niaRadioBeatPlayerLoad) {
-      const url = new URL("nia-radio-beat-player.js?v=20261024-crowd-budget-v1", window.HATSU_ASSET_BASE || document.baseURI).href;
+      const url = new URL("nia-radio-beat-player.js?v=20261027-seated-posture-v1", window.HATSU_ASSET_BASE || document.baseURI).href;
       niaRadioBeatPlayerLoad = import(url).then(({ NiaRadioBeatPlayer }) => {
         const stage = niaRadioEl("niaRadioBeatStage"), caption = niaRadioEl("niaRadioCaption");
         if (!stage || !caption) throw new Error("广播演出区域不可用");
@@ -27122,7 +27123,7 @@ ${outputContract("请写 900 字以内的完整校内傍晚场景，从抵达到
     if (niaTvBeatPlayer) return niaTvBeatPlayer;
     if (!niaTvBeatPlayerLoad) {
       const generation = niaTvBeatPlayerGeneration;
-      const url = new URL("nia-tv-beat-player.js?v=20261024-crowd-budget-v1", window.HATSU_ASSET_BASE || document.baseURI).href;
+      const url = new URL("nia-tv-beat-player.js?v=20261027-seated-posture-v1", window.HATSU_ASSET_BASE || document.baseURI).href;
       niaTvBeatPlayerLoad = import(url).then(({ NiaTvBeatPlayer }) => {
         if (generation !== niaTvBeatPlayerGeneration) throw new Error("电视演出已取消");
         const stage = niaRadioEl("niaRadioBeatStage"), caption = niaRadioEl("niaRadioCaption");
@@ -28885,6 +28886,68 @@ ${outputContract("请写 900 字以内的完整校内傍晚场景，从抵达到
   let kotoneBeatLoad = null;
   let kotoneBeatAwaitingExit = false;
 
+  // The Beat host is embedded in the ST overlay and can be shown after the
+  // player instance has already been created.  In that case a portrait-sized
+  // layout may be measured once and retained by the scene canvases.  Keep a
+  // small runtime sync here so desktop Beat always follows the actual browser
+  // viewport and every loaded runtime gets a matching renderer resize.
+  function beatFillsFixedStage() {
+    return document.documentElement.classList.contains("hatsu-fixed-stage-active");
+  }
+
+  function syncKotoneBeatViewport(host = document.getElementById("vnBeatHost"), app = kotoneBeatApp) {
+    if (!host) return false;
+    const width = Math.max(0, Number(window.innerWidth || document.documentElement?.clientWidth || 0));
+    const height = Math.max(0, Number(window.innerHeight || document.documentElement?.clientHeight || 0));
+    // The embedded stage is a 1600×900 canvas scaled into the SillyTavern
+    // frame. Viewport units are smaller than that canvas, so a 100vw host
+    // sits in the top-left and leaves the underlying VN visible.
+    const fillCanvas = beatFillsFixedStage();
+    const desktop = fillCanvas || (width >= 761 && width > height);
+    host.classList.toggle("is-desktop-beat", desktop);
+    const stage = host.querySelector(".beat-stage");
+    if (fillCanvas) {
+      host.style.setProperty("position", "absolute", "important");
+      host.style.setProperty("inset", "0", "important");
+      host.style.setProperty("width", "100%", "important");
+      host.style.setProperty("height", "100%", "important");
+      host.style.setProperty("max-width", "none", "important");
+      host.style.setProperty("max-height", "none", "important");
+      stage?.style.setProperty("width", "100%", "important");
+      stage?.style.setProperty("height", "100%", "important");
+      stage?.style.setProperty("max-width", "none", "important");
+      stage?.style.setProperty("max-height", "none", "important");
+      stage?.style.setProperty("aspect-ratio", "auto", "important");
+    } else if (desktop) {
+      host.style.setProperty("position", "fixed", "important");
+      host.style.setProperty("inset", "0", "important");
+      host.style.setProperty("width", "100vw", "important");
+      host.style.setProperty("height", "100dvh", "important");
+      host.style.setProperty("max-width", "none", "important");
+      host.style.setProperty("max-height", "none", "important");
+      stage?.style.setProperty("width", "100%", "important");
+      stage?.style.setProperty("height", "100%", "important");
+      stage?.style.setProperty("max-width", "none", "important");
+      stage?.style.setProperty("max-height", "none", "important");
+      stage?.style.setProperty("aspect-ratio", "auto", "important");
+    } else {
+      ["position", "inset", "width", "height", "max-width", "max-height"].forEach((property) => host.style.removeProperty(property));
+      ["width", "height", "max-width", "max-height", "aspect-ratio"].forEach((property) => stage?.style.removeProperty(property));
+    }
+    if (!host._hatsuBeatViewportListener) {
+      host._hatsuBeatViewportListener = () => syncKotoneBeatViewport(host, kotoneBeatApp);
+      window.addEventListener("resize", host._hatsuBeatViewportListener, { passive: true });
+      document.addEventListener("fullscreenchange", host._hatsuBeatViewportListener);
+    }
+    const resizeRuntimes = () => {
+      const entries = app?.director?.allEntries?.();
+      entries?.forEach((entry) => entry?.player?.resize?.());
+    };
+    if (typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(resizeRuntimes);
+    else resizeRuntimes();
+    return desktop;
+  }
+
   function clearKotoneBeatPlaybackEnd(app = kotoneBeatApp) {
     kotoneBeatAwaitingExit = false;
     app?.root?.classList.remove("is-beat-finished");
@@ -28990,7 +29053,7 @@ ${outputContract("请写 900 字以内的完整校内傍晚场景，从抵达到
   function ensureKotoneBeatApp() {
     if (kotoneBeatApp) return Promise.resolve(kotoneBeatApp);
     if (!kotoneBeatLoad) {
-      const url = new URL("../mmd-dialogue-stage/beat-player.js?v=20261024-crowd-budget-v1", document.baseURI || window.location.href).href;
+      const url = new URL("../mmd-dialogue-stage/beat-player.js?v=20261102-actor-pose-v1", document.baseURI || window.location.href).href;
       kotoneBeatLoad = import(url).then((mod) => {
         const host = document.getElementById("vnBeatHost");
         if (!host || typeof mod.BeatPlayerApp !== "function") return null;
@@ -29055,6 +29118,7 @@ ${outputContract("请写 900 字以内的完整校内傍晚场景，从抵达到
             return result;
           };
           kotoneBeatApp = app;
+          syncKotoneBeatViewport(host, app);
           syncBeatMapControls(app);
           return app;
         } catch (error) {
@@ -29088,6 +29152,7 @@ ${outputContract("请写 900 字以内的完整校内傍晚场景，从抵达到
     const vnChoices = document.getElementById("vnChoicesOverlay");
     if (vnChoices) vnChoices.style.display = "none";
     host.hidden = false;
+    syncKotoneBeatViewport(host, kotoneBeatApp);
     const resourceLoad = revealWithWipe && typeof beginProduceResourceLoad === "function" ? beginProduceResourceLoad() : 0;
     ensureKotoneBeatApp().then(async (app) => {
       if (!app || host.hidden) {

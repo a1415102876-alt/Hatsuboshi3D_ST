@@ -616,6 +616,34 @@ export function beatBackgroundEventTag(category) {
     return `BEAT_BACKGROUND_EVENT=${key}`;
 }
 
+function libraryFilename(value) {
+    const base = String(value || '').trim().replace(/^['"]|['"]$/gu, '').split(/[\\/]/u).pop()?.split('?')[0]?.trim() || '';
+    if (!base || base === '.' || base === '..') return '';
+    if (!/\.png$/iu.test(base) && !/^env_2d_/iu.test(base)) return '';
+    return `${base.replace(/\.png$/iu, '')}.png`;
+}
+
+function libraryFilenameHit(value, source) {
+    const filename = libraryFilename(value);
+    if (!filename) return '';
+    const stem = filename.replace(/\.png$/iu, '');
+    const wanted = new Set([filename.toLowerCase()]);
+    if (/^env_2d_/iu.test(stem) && !/^env_2d_(?:adv|other)_/iu.test(stem)) {
+        const rest = stem.replace(/^env_2d_/iu, '');
+        wanted.add(`env_2d_adv_${rest}.png`.toLowerCase());
+        wanted.add(`env_2d_other_${rest}.png`.toLowerCase());
+    }
+    const hits = source.filter(name => wanted.has(String(name).trim().toLowerCase()));
+    if (hits.length === 1) return hits[0];
+    const exact = hits.find(name => String(name).trim().toLowerCase() === filename.toLowerCase());
+    if (exact) return exact;
+    const adv = hits.find(name => String(name).trim().toLowerCase().startsWith('env_2d_adv_'));
+    if (adv) return adv;
+    const suffix = filename.toLowerCase();
+    const suffixHits = source.filter(name => String(name).trim().toLowerCase().endsWith(suffix));
+    return suffixHits.length === 1 ? suffixHits[0] : '';
+}
+
 function chooseTime(candidates, requestedTime) {
     if (!candidates.length) return '';
     if (requestedTime === 'other') return candidates.find(item => item.time === 'other')?.name || '';
@@ -641,7 +669,15 @@ export function resolveBeatBackground(value, { backgrounds = BEAT_BACKGROUND_NAM
     const candidates = source
         .map(name => ({ name, family: backgroundFamily(name), time: backgroundTime(name) }))
         .filter(item => familyAliases(item.family).has(requestedFamilyToken) || item.family === fullFamily(requestedFamilyToken));
-    if (!candidates.length) return { name: '', family: requestedFamilyToken, time: requestedTime, matched: false };
+    if (!candidates.length) {
+        const named = libraryFilenameHit(value, source);
+        if (!named) return { name: '', family: requestedFamilyToken, time: requestedTime, matched: false };
+        const namedFamily = backgroundFamily(named);
+        if (category && category !== 'bond' && !candidateFamilies.has(namedFamily)) {
+            return { name: '', family: namedFamily, time: backgroundTime(named), matched: false, categoryMismatch: true };
+        }
+        return { name: named, family: namedFamily, time: backgroundTime(named), matched: true, exact: true };
+    }
     if (category && category !== 'bond' && !candidates.some(item => candidateFamilies.has(item.family))) {
         return { name: '', family: requestedFamilyToken, time: requestedTime, matched: false, categoryMismatch: true };
     }

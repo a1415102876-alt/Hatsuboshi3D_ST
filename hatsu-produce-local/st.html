@@ -91,11 +91,11 @@
 
   function convertNiaBusinessModuleToClassic(sourceText) {
     let source = String(sourceText || "").replace(
-      /^import \{ beatActorId \} from '\.\.\/mmd-dialogue-stage\/beat-player-core\.js\?v=20261014-npc-portraits-v1';\r?\n/m,
+      /^import \{ beatActorId \} from '\.\.\/mmd-dialogue-stage\/beat-player-core\.js\?v=20261102-krnh-3d-v1';\r?\n/m,
       'const { beatActorId } = globalThis.HatsuBeatPlayerCore;\n'
     );
     source = source.replace(
-      /^import \{ parseBeatScript \} from '\.\.\/mmd-dialogue-stage\/beat-protocol\.js\?v=20261014-npc-portraits-v1';\r?\n/m,
+      /^import \{ parseBeatScript \} from '\.\.\/mmd-dialogue-stage\/beat-protocol\.js\?v=20261102-krnh-3d-v1';\r?\n/m,
       'const { parseBeatScript } = globalThis.HatsuBeatProtocol;\n'
     );
     source = source.replace(
@@ -906,8 +906,8 @@
     let niaBusinessModuleLoaded = false;
     try {
       globalThis.Hatsu3DPortraitCues = await import(new URL('../mmd-dialogue-stage/portrait-cues.js?v=20260914-3d-stage-v1', abs('nia-business-api.js')).href);
-      globalThis.HatsuBeatPlayerCore = await import(new URL('../mmd-dialogue-stage/beat-player-core.js?v=20261014-npc-portraits-v1', abs('nia-business-api.js')).href);
-      globalThis.HatsuBeatProtocol = await import(new URL('../mmd-dialogue-stage/beat-protocol.js?v=20261014-npc-portraits-v1', abs('nia-business-api.js')).href);
+      globalThis.HatsuBeatPlayerCore = await import(new URL('../mmd-dialogue-stage/beat-player-core.js?v=20261102-krnh-3d-v1', abs('nia-business-api.js')).href);
+      globalThis.HatsuBeatProtocol = await import(new URL('../mmd-dialogue-stage/beat-protocol.js?v=20261102-krnh-3d-v1', abs('nia-business-api.js')).href);
       const businessApiUrl = abs('nia-business-api.js');
       const businessApiRes = await fetch(businessApiUrl, { cache: 'no-store' });
       if (!businessApiRes.ok) throw new Error('HTTP ' + businessApiRes.status);
@@ -927,8 +927,8 @@
 
     let niaRadioModuleLoaded = false;
     try {
-      globalThis.HatsuBeatPlayerCore = await import(new URL('../mmd-dialogue-stage/beat-player-core.js?v=20261014-npc-portraits-v1', abs('nia-radio-business-api.js')).href);
-      globalThis.HatsuBeatProtocol = await import(new URL('../mmd-dialogue-stage/beat-protocol.js?v=20261014-npc-portraits-v1', abs('nia-radio-business-api.js')).href);
+      globalThis.HatsuBeatPlayerCore = await import(new URL('../mmd-dialogue-stage/beat-player-core.js?v=20261102-krnh-3d-v1', abs('nia-radio-business-api.js')).href);
+      globalThis.HatsuBeatProtocol = await import(new URL('../mmd-dialogue-stage/beat-protocol.js?v=20261102-krnh-3d-v1', abs('nia-radio-business-api.js')).href);
       const radioApiUrl = abs('nia-radio-business-api.js');
       const radioApiRes = await fetch(radioApiUrl, { cache: 'no-store' });
       if (!radioApiRes.ok) throw new Error('HTTP ' + radioApiRes.status);
@@ -948,8 +948,8 @@
 
     let niaTvModuleLoaded = false;
     try {
-      globalThis.HatsuBeatPlayerCore = await import(new URL('../mmd-dialogue-stage/beat-player-core.js?v=20261014-npc-portraits-v1', abs('nia-tv-business-api.js')).href);
-      globalThis.HatsuBeatProtocol = await import(new URL('../mmd-dialogue-stage/beat-protocol.js?v=20261014-npc-portraits-v1', abs('nia-tv-business-api.js')).href);
+      globalThis.HatsuBeatPlayerCore = await import(new URL('../mmd-dialogue-stage/beat-player-core.js?v=20261102-krnh-3d-v1', abs('nia-tv-business-api.js')).href);
+      globalThis.HatsuBeatProtocol = await import(new URL('../mmd-dialogue-stage/beat-protocol.js?v=20261102-krnh-3d-v1', abs('nia-tv-business-api.js')).href);
       const tvApiUrl = abs('nia-tv-business-api.js');
       const tvApiRes = await fetch(tvApiUrl, { cache: 'no-store' });
       if (!tvApiRes.ok) throw new Error('HTTP ' + tvApiRes.status);
@@ -966,8 +966,8 @@
 
     let niaAuditionModuleLoaded = false;
     try {
-      globalThis.HatsuBeatPlayerCore = await import(new URL('../mmd-dialogue-stage/beat-player-core.js?v=20261014-npc-portraits-v1', abs('nia-audition-api.js')).href);
-      globalThis.HatsuBeatProtocol = await import(new URL('../mmd-dialogue-stage/beat-protocol.js?v=20261014-npc-portraits-v1', abs('nia-audition-api.js')).href);
+      globalThis.HatsuBeatPlayerCore = await import(new URL('../mmd-dialogue-stage/beat-player-core.js?v=20261102-krnh-3d-v1', abs('nia-audition-api.js')).href);
+      globalThis.HatsuBeatProtocol = await import(new URL('../mmd-dialogue-stage/beat-protocol.js?v=20261102-krnh-3d-v1', abs('nia-audition-api.js')).href);
       const auditionApiUrl = abs('nia-audition-api.js');
       const auditionApiRes = await fetch(auditionApiUrl, { cache: 'no-store' });
       if (!auditionApiRes.ok) throw new Error('HTTP ' + auditionApiRes.status);
@@ -987,8 +987,8 @@
 
     let niaFanMilestoneModuleLoaded = false;
     try {
-      globalThis.HatsuBeatPlayerCore = await import(new URL('../mmd-dialogue-stage/beat-player-core.js?v=20261014-npc-portraits-v1', abs('nia-fan-milestone-api.js')).href);
-      globalThis.HatsuBeatProtocol = await import(new URL('../mmd-dialogue-stage/beat-protocol.js?v=20261014-npc-portraits-v1', abs('nia-fan-milestone-api.js')).href);
+      globalThis.HatsuBeatPlayerCore = await import(new URL('../mmd-dialogue-stage/beat-player-core.js?v=20261102-krnh-3d-v1', abs('nia-fan-milestone-api.js')).href);
+      globalThis.HatsuBeatProtocol = await import(new URL('../mmd-dialogue-stage/beat-protocol.js?v=20261102-krnh-3d-v1', abs('nia-fan-milestone-api.js')).href);
       const fanMilestoneApiUrl = abs('nia-fan-milestone-api.js');
       const fanMilestoneApiRes = await fetch(fanMilestoneApiUrl, { cache: 'no-store' });
       if (!fanMilestoneApiRes.ok) throw new Error('HTTP ' + fanMilestoneApiRes.status);

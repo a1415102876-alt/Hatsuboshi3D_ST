@@ -7,16 +7,24 @@ import worker from '../cloudflare/worker.js';
 const source=await readFile(new URL('../hatsu-produce-local/fish-tts.js',import.meta.url),'utf8');
 const expected=[
  ['藤田ことね','ふじた　ことね','fujitakotone'],
+ ['藤田琴音','ふじた　ことね','fujitakotone'],
  ['月村手毬','つきむら　てまり','tsukimuratemari'],
  ['花海咲季','はなみ　さき','hanamisaki'],
  ['秦谷美鈴','はたや　みすず','hatayamisuzu'],
+ ['秦谷美铃','はたや　みすず','hatayamisuzu'],
  ['花海佑芽','はなみ　うめ','hanamiume'],
  ['有村麻央','ありむら　まお','arimuramao'],
  ['葛城リーリヤ','かつらぎ　りーりや','katsuragiriiriya'],
+ ['葛城莉莉娅','かつらぎ　りーりや','katsuragiriiriya'],
  ['倉本千奈','くらもと　ちな','kuramotochina'],
+ ['仓本千奈','くらもと　ちな','kuramotochina'],
  ['紫雲清夏','しうん　すみか','shiuNsumika'],
+ ['紫云清夏','しうん　すみか','shiuNsumika'],
  ['篠澤広','しのさわ　ひろ','shinosawahiro'],
+ ['篠沢広','しのさわ　ひろ','shinosawahiro'],
+ ['筱泽广','しのさわ　ひろ','shinosawahiro'],
  ['姫崎莉波','ひめさき　りなみ','himesakirinami'],
+ ['姬崎莉波','ひめさき　りなみ','himesakirinami'],
  ['十王星南','じゅうおう　せな','juuoosena'],
  ['雨夜燕','あまや　つばめ','amayatsubame'],
  ['shiun sumika','しうん　すみか','shiuNsumika'],
@@ -25,7 +33,22 @@ const expected=[
  ['arimura-mao','ありむら　まお','arimuramao'],
  ['amaya tsubame','あまや　つばめ','amayatsubame'],
  ['amaya-tsubame','あまや　つばめ','amayatsubame'],
+ ['莉莉娅','りーりや','riiriya'],
+ ['リーリヤ','りーりや','riiriya'],
+ ['ことね','ことね','kotone'],
+ ['琴音','ことね','kotone'],
+ ['咲季','さき','saki'],
+ ['手毬','てまり','temari'],
+ ['美鈴','みすず','misuzu'],
+ ['美铃','みすず','misuzu'],
+ ['佑芽','うめ','ume'],
+ ['麻央','まお','mao'],
+ ['千奈','ちな','china'],
+ ['清夏','すみか','sumika'],
+ ['莉波','りなみ','rinami'],
+ ['星南','せな','sena'],
  ['初星','はつぼし','hatsuboshi'],
+ ['燕','つばめ','tsubame'],
  ['毬','まり','mari']
 ];
 function client(fetch){
@@ -53,7 +76,7 @@ test('full-name matches precede 毬 while unrelated lines send no dictionary',as
  await api.prepare({id:'names',speaker:'fktn',text:original});
  const items=requests[0].pronunciation_dictionary?.[0]?.items;
  assert.ok(items,'a matching TTS request must include pronunciation_dictionary');
- assert.deepEqual(items.map(item=>item.key),['月村手毬','初星','毬']);
+  assert.deepEqual(items.map(item=>item.key),['月村手毬','手毬','初星','毬']);
  assert.equal(requests[0].text,original);assert.equal(items[0].value.replace(/[01]/g,''),'tsukimuratemari');
  assert.ok(items.every(item=>!Object.hasOwn(item,'reading')&&!item.value.includes('<|')));
  const parsed=api.parseLocalizedText('<display lang="zh">月村手毬和初星</display><tts lang="ja">月村手毬と初星</tts>','fktn');

@@ -77,7 +77,12 @@ export function buildDialogueAssetPlan(compiled, preload, library, { random, pre
         }
         add('secondary-motion-manifest.json');
         const eligible = catalog.filter(item => ['cmmn', id].includes(item.character) && motionAvailability(item, index).ready);
-        const idle = eligible[findIdlePlaylistIndex(eligible, id)];
+        const idleIndex = findIdlePlaylistIndex(eligible, id);
+        let idle = idleIndex >= 0 ? eligible[idleIndex] : null;
+        // Idols without a standing idle, such as krnh, keep the dialogue pose
+        // instead of failing preparation or dropping into the bind pose.
+        const idleUsesDialogue = !idle;
+        if (!idle) idle = selectPortraitPerformance({ mode: 'mixed', gesture: 'talk', face: 'neutral', bodySelector: 'neutral' }, eligible, id, { random });
         if (!idle) throw new Error(`缺少角色待机动作：${id}`);
         motions(idle);
         for (const family of (preloadFamiliesById?.[id] || [])) {
@@ -99,6 +104,10 @@ export function buildDialogueAssetPlan(compiled, preload, library, { random, pre
             if (!item && cue.mode !== 'additive') {
                 item = selectPortraitPerformance(parsePortraitCue(`${names[id]}(待机)`, 'dialogue', id), eligible, id, { random });
                 if (item) fallbacks.push({ idolId: id, speaker, requested: cue.gesture, used: 'idle' });
+            }
+            if (!item && idleUsesDialogue && cue.mode !== 'additive') {
+                item = idle;
+                fallbacks.push({ idolId: id, speaker, requested: cue.gesture, used: 'talk' });
             }
             if (!item) throw new Error(`无法为角色选择动作：${speaker}`);
             selected.set(speaker, item); motions(item);

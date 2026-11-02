@@ -1,6 +1,7 @@
 // Pure helpers for scenes exported by tools/gakumas-scene-export. No Three.js
 // import so the math can be tested in Node. Sidecar data is already in glTF
 // space (Unity X negated), metres, with the camera/actor poses resolved.
+import { calibratedSceneLayoutId } from './scene-placement-overrides.js?v=20261027-calibrated-beat-v1';
 
 export const SCENE_FORMAT = 'gakumas-scene-export';
 
@@ -52,6 +53,31 @@ export function pickLayoutActor(layout) {
     return layout?.actors?.[0] || null;
 }
 
+// The stage opens these scenes on their generic layout. Coarse activity boxes
+// cover that station, and the dance room also replaced the generic camera.
+export function beatUsesStageDefaultPlacement(sceneId) {
+    const id = String(sceneId || '');
+    return /^env_3d_adv_danceroom-00-00(?:-|$)/.test(id)
+        || /^env_3d_adv_classroom-00-\d\d(?:-|$)/.test(id);
+}
+
+export function resolveBeatSceneCameraOptions(sceneId, shot, options = {}) {
+    // Keep the user-calibrated actor/camera pair together, bypassing coarse
+    // activity bounds and the previous extra one-metre camera retreat.
+    const layout = calibratedSceneLayoutId(sceneId);
+    if (!layout || options.layout) return options;
+    return { ...options, layout, backoffMeters: 0 };
+}
+
+export function retreatCameraView(view, metres = 0, scale = 1) {
+    const distance = Number(metres) * Number(scale);
+    if (!view || !Number.isFinite(distance) || distance <= 0) return view;
+    const direction = view.position.map((value, index) => value - view.target[index]);
+    const length = Math.hypot(...direction);
+    if (length < 1e-9) return view;
+    return { ...view, position: view.position.map((value, index) => value + direction[index] / length * distance) };
+}
+
 // The game camera keeps its exact direction; the orbit target is the point on
 // its view ray closest to the actor so OrbitControls does not re-aim it.
 export function layoutCameraView(layout, root, minDistance = 1, modelFrame = null) {
@@ -84,7 +110,7 @@ export function layoutCameraView(layout, root, minDistance = 1, modelFrame = nul
     const distance = Math.max(along, minDistance);
     return {
         position,
-        target: position.map((value, index) => value + forward[index] * distance),
+        target: camera.target ? applyRootTransform(root, camera.target) : position.map((value, index) => value + forward[index] * distance),
         up: applyRootRotation(root, camera.up || [0, 1, 0]),
         fov: Number(camera.fov) || null,
         near: Number(camera.near) * root.scale || null,
@@ -282,6 +308,85 @@ export function sceneSphereFog(stack = {}) {
         maxAmount: Number.isFinite(fog.maxAmount) ? fog.maxAmount : 1,
         color: linearColor(colorArray(fog.color)),
     };
+}
+
+const HOT_SPRING_SCENE_ID = 'env_3d_adv_hotspring-00-00-noon';
+const HOT_SPRING_DEFAULT_EFFECTS = Object.freeze({
+    kind: 'hot-spring',
+    water: {
+        center: [-2.8, -0.08, -2.4],
+        size: [7.2, 5.4],
+        y: 0,
+        color: [0.12, 0.68, 0.72],
+        opacity: 0.56,
+        wave: { amplitude: 0.018, speed: 0.08, scale: 0.72 },
+    },
+    steam: [],
+    fogOverride: { density: 0.18, maxAmount: 0.12 },
+});
+
+function finiteNonNegative(value, fallback) {
+    const number = Number(value);
+    return Number.isFinite(number) && number >= 0 ? number : fallback;
+}
+
+function vector(value, fallback, length) {
+    if (!Array.isArray(value) || value.length < length) return [...fallback];
+    return fallback.map((fallbackValue, index) => {
+        const number = Number(value[index]);
+        return Number.isFinite(number) ? number : fallbackValue;
+    });
+}
+
+// Scene-local effects are opt-in through both the known scene id and the
+// sidecar kind. This prevents a malformed or copied effects block from
+// changing unrelated scene renders.
+export function sceneEffectProfile(sceneId, sidecarEffects = {}) {
+    if (sceneId !== HOT_SPRING_SCENE_ID) return null;
+    if (sidecarEffects?.kind && sidecarEffects.kind !== HOT_SPRING_DEFAULT_EFFECTS.kind) return null;
+    const source = sidecarEffects?.kind === HOT_SPRING_DEFAULT_EFFECTS.kind ? sidecarEffects : {};
+    const defaults = HOT_SPRING_DEFAULT_EFFECTS;
+    const waterSource = source.water || {};
+    const waveSource = waterSource.wave || {};
+    const water = {
+        ...defaults.water,
+        ...waterSource,
+        center: vector(waterSource.center, defaults.water.center, 3),
+        size: vector(waterSource.size, defaults.water.size, 2),
+        y: Number.isFinite(Number(waterSource.y)) ? Number(waterSource.y) : defaults.water.y,
+        color: vector(waterSource.color, defaults.water.color, 3),
+        opacity: Math.min(0.9, finiteNonNegative(waterSource.opacity, defaults.water.opacity)),
+        wave: {
+            ...defaults.water.wave,
+            ...waveSource,
+            amplitude: finiteNonNegative(waveSource.amplitude, defaults.water.wave.amplitude),
+            speed: finiteNonNegative(waveSource.speed, defaults.water.wave.speed),
+            scale: Math.max(0.05, finiteNonNegative(waveSource.scale, defaults.water.wave.scale)),
+        },
+    };
+    const steam = (Array.isArray(source.steam) ? source.steam : defaults.steam).slice(0, 3).map(patch => ({
+        position: vector(patch?.position, [0, water.y + 0.15, 0], 3),
+        size: vector(patch?.size, [1.6, 1.1], 2),
+        opacity: Math.min(0.35, finiteNonNegative(patch?.opacity, 0.1)),
+        drift: vector(patch?.drift, [0.03, 0.02], 2),
+    }));
+    const fogSource = source.fogOverride || {};
+    return {
+        kind: defaults.kind,
+        water,
+        steam,
+        fogOverride: {
+            density: finiteNonNegative(fogSource.density, defaults.fogOverride.density),
+            maxAmount: Math.min(1, finiteNonNegative(fogSource.maxAmount, defaults.fogOverride.maxAmount)),
+        },
+    };
+}
+
+export function sceneFogWithOverride(fog, override = null) {
+    if (!fog || !override) return fog;
+    const density = finiteNonNegative(override.density, fog.density);
+    const maxAmount = Math.min(1, finiteNonNegative(override.maxAmount, fog.maxAmount));
+    return { ...fog, density, maxAmount };
 }
 
 // ColorUtils.PrepareShadowsMidtonesHighlights: gamma colour to linear plus the

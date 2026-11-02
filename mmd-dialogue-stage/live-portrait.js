@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { applyActorPose, applyCameraPose } from './scene-free-look.js?v=20261102-actor-pose-v1';
 import { MMDLoader } from 'three/addons/loaders/MMDLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MMDAnimationHelper } from 'three/addons/animation/MMDAnimationHelper.js';
@@ -20,10 +21,11 @@ import { idolCostumeVariant, resolveBeatCostume } from './beat-costumes.js?v=202
 import { GAKUMAS_TEXTURE_KINDS, GAKUMAS_ACTIVE_TEXTURE_KINDS, selectMaterialTextures, setTextureColorSpace, textureDescriptor, textureUsesColorSpace } from './gakumas-materials.js?v=20261007-solo1-rampadd-v1';
 import { injectActorShader } from './gakumas-shader.js?v=20261004-key-view-v1';
 import { actorStencilState, classifyActorPass, placeCharacterShadowLight, shouldCastCharacterShadow, shouldReceiveCharacterShadow } from './gakumas-passes.js?v=20261024-crowd-budget-v1';
-import { HairCoverStage } from './gakumas-hair-cover.js?v=20261005-hair-outline-v1';
-import { GAKUMAS_LOOK, GakumasLookPass, applyGakumasLookUniforms, createGakumasLookUniformValues, matcapKeyDirection } from './gakumas-look.js?v=20261004-key-az60-v1';
-import { GakumasPostPass } from './gakumas-post.js?v=20261004-beat-taa-v2';
-import { backgroundPanAmount, stagePlateCover } from './beat-player-core.js?v=20261023-camera-v1';
+import { HairCoverStage } from './gakumas-hair-cover.js?v=20261027-taa-outline-v1';
+import { GAKUMAS_LOOK, GakumasLookPass, applyGakumasLookUniforms, createGakumasLookUniformValues, matcapKeyDirection } from './gakumas-look.js?v=20261027-picture-v1';
+import { GakumasPostPass } from './gakumas-post.js?v=20261028-taa-supersample-v1';
+import { motionFromPositions } from './gakumas-taa-motion.js?v=20261027-motion-aware-taa-v1';
+import { backgroundDepthBlur, backgroundPanAmount, stagePlateCover, zoomPlateCover } from './beat-player-core.js?v=20261027-bg-zoom-v1';
 import { hasGakumasVertexColorAttribute } from './gakumas-outline.js?v=20260909-outline1';
 import {
     LIVE_PORTRAIT_IDOL_ID,
@@ -33,17 +35,19 @@ import {
     shouldPlayLivePortraitTalk,
     shouldShowLivePortrait,
 } from './live-portrait-policy.js?v=20261006-beat-effects-v1';
-import { parsePortraitCue, selectPortraitPerformance, portraitPerformanceCandidates } from './portrait-cues.js?v=20261011-weighted-cues-v2';
-import { StageAttentionController } from './stage-attention.js?v=20260914-stage-attention-v1';
+import { parsePortraitCue, selectPortraitPerformance, portraitPerformanceCandidates } from './portrait-cues.js?v=20261101-motion-file-v1';
+import { StageAttentionController } from './stage-attention.js?v=20261030-perf-diagnostic-v2';
 import { bindVisemeMorphs } from './dialogue-intent.js?v=20261011-emotion-cue-labels-v2';
 import { applyTalkMouthProfile, selectTalkMouthProfile, talkArticulationFromPhase } from './tts-lip-sync.js?v=20261013-audio-talk-v3';
-import { SceneDirector } from './scene-director.js?v=20261024-crowd-budget-v1';
+import { SceneDirector } from './scene-director.js?v=20261102-krnh-3d-v1';
 import { portraitCrowdBudget } from './portrait-crowd-budget.js?v=20261024-crowd-budget-v1';
 import { configureGlbAnimationTarget, detectLivePortraitFormat } from './live-portrait-model.js';
 import { bindGlbMorphTracks } from './glb-morph-tracks.js?v=20260929-face-primitives-v1';
-import { SecondaryMotion, applyHairRestRotationRebase, rebaseHairAnimationTracks, refreshRestInverseBinds } from './gakumas-secondary-motion.js?v=20261010-left-front-hair-gap-v1';
+import { SecondaryMotion, applyHairRestRotationRebase, rebaseHairAnimationTracks, refreshRestInverseBinds } from './gakumas-secondary-motion.js?v=20261102-krnh-sleeve-gravity-v1';
 import { FacialEffectsStage } from './facial-effects-stage.js?v=20261017-browser-cache-v1';
-import { loadResourceLibrary } from './asset-runtime.js';
+import { loadResourceLibrary } from './asset-runtime.js?v=20261102-krnh-profile-v1';
+import { filterPreferredSitItems } from './seated-posture.js?v=20261027-seated-rollback-v1';
+import { createPerformanceBucket, recordPerformanceSample, snapshotPerformanceBucket } from './performance-monitor-core.js?v=20261030-perf-diagnostic-v2';
 
 export function createSceneDirector(container, runtimeOptions = {}) {
     return new SceneDirector(container, canvas => new LivePortraitRuntime(canvas, runtimeOptions));
@@ -62,8 +66,8 @@ const LIBRARY_JSON = '/mmd-dialogue-stage/library.json?v=20261013-all-idol-solo1
 const MOTION_MAP_JSON = '/mmd-dialogue-stage/gakumas-motion-map.json?v=20261010-story-actions-v1';
 const STAGE_ASSET_ROOT = new URL('./', import.meta.url);
 const SECONDARY_MOTION_JSON = new URL('gakumas-secondary-motion.json?v=20261002-secondary-motion-v25-kcna-native-skirt', STAGE_ASSET_ROOT).href;
-const SECONDARY_MOTION_MANIFEST = new URL('secondary-motion-manifest.json?v=20261013-solo1-secondary-v1', STAGE_ASSET_ROOT).href;
-const SECONDARY_PROFILE_VERSION = '20261013-solo1-secondary-v1';
+const SECONDARY_MOTION_MANIFEST = new URL('secondary-motion-manifest.json?v=20261026-hair-contact-v1', STAGE_ASSET_ROOT).href;
+const SECONDARY_PROFILE_VERSION = '20261102-krnh-sleeve-gravity-v1';
 const secondaryMotionTables = new Map();
 const LIBRARY_STATUS = '/mmd-dialogue-stage/library/status?v=20261013-all-idol-solo1-v1';
 const LIVE_PORTRAIT_GLB_SCALE = 12.5;
@@ -90,7 +94,8 @@ function modelVariantKey(name) {
 function secondaryMotionReady(profileKey, fallbackId = '', resources = null) {
     if (resources) {
         const entry = resources.manifest.profiles.find(item => item.modelKey === profileKey || item.aliases?.includes(profileKey));
-        return resources.fetch(new URL(entry?.profile || `secondary-motion-profiles/${fallbackId || profileKey}.json`, STAGE_ASSET_ROOT).href).then(response => response.json());
+        const profilePath = entry?.profile || `secondary-motion-profiles/${fallbackId || profileKey}.json`;
+        return resources.fetch(new URL(`${profilePath}?v=${SECONDARY_PROFILE_VERSION}`, STAGE_ASSET_ROOT).href).then(response => response.json());
     }
     const key = profileKey || fallbackId || 'fallback';
     if (secondaryMotionTables.has(key)) return secondaryMotionTables.get(key);
@@ -116,6 +121,45 @@ function secondaryMotionReady(profileKey, fallbackId = '', resources = null) {
         });
     secondaryMotionTables.set(key, request);
     return request;
+}
+
+function collectModelComplexity(model) {
+    const geometries = new Set();
+    const materials = new Set();
+    const textures = new Set();
+    const bones = new Set();
+    let meshes = 0;
+    let skinnedMeshes = 0;
+    let vertices = 0;
+    let triangles = 0;
+    const textureKeys = ['map', 'normalMap', 'emissiveMap', 'roughnessMap', 'metalnessMap', 'alphaMap', 'aoMap', 'lightMap', 'envMap', 'matcap', 'toonMap', 'specularMap'];
+    model?.traverse?.(object => {
+        if (object.isMesh) meshes += 1;
+        if (object.isSkinnedMesh) {
+            skinnedMeshes += 1;
+            object.skeleton?.bones?.forEach(bone => bones.add(bone));
+        }
+        if (object.geometry && !geometries.has(object.geometry)) {
+            geometries.add(object.geometry);
+            const position = object.geometry.attributes?.position;
+            const index = object.geometry.index;
+            vertices += Number(position?.count) || 0;
+            triangles += Math.floor((Number(index?.count) || Number(position?.count) || 0) / 3);
+        }
+        for (const material of (Array.isArray(object.material) ? object.material : [object.material]).filter(Boolean)) {
+            if (materials.has(material)) continue;
+            materials.add(material);
+            textureKeys.forEach(key => {
+                const texture = material[key];
+                if (texture?.isTexture) textures.add(texture);
+            });
+            Object.values(material.uniforms || {}).forEach(uniform => {
+                const texture = uniform?.value;
+                if (texture?.isTexture) textures.add(texture);
+            });
+        }
+    });
+    return { meshes, skinnedMeshes, geometries: geometries.size, materials: materials.size, textures: textures.size, bones: bones.size, vertices, triangles };
 }
 
 function normalizedBoneKey(name) {
@@ -145,6 +189,14 @@ function resolveVmdBoneName(rawName, bones) {
 }
 
 let singleton = null;
+const livePicture = { taa: true, plateSharpen: true };
+const livePictureRuntimes = new Set();
+
+export function setLivePictureOptions(options = {}) {
+    if (typeof options.taa === 'boolean') livePicture.taa = options.taa;
+    if (typeof options.plateSharpen === 'boolean') livePicture.plateSharpen = options.plateSharpen;
+    for (const runtime of livePictureRuntimes) runtime.syncPictureOptions({ render: true });
+}
 
 export function attachLivePortrait(canvas) {
     if (singleton) {
@@ -191,6 +243,12 @@ export class LivePortraitRuntime {
         this.visemeBound = {};
         this.paused = true;
         this.crowdBudget = null;
+        this.performanceMonitor = {
+            enabled: globalThis.__HATSU_PERF_MONITOR_ENABLED === true,
+            bucket: createPerformanceBucket(),
+            model: null,
+            modelStats: null,
+        };
         this.crowdSerial = 0;
         this.physicsDebt = 0;
         this.config = null;
@@ -201,6 +259,8 @@ export class LivePortraitRuntime {
         this.animationTarget = null;
         this.modelFormat = '';
         this.animationMixer = null;
+        this.taaMotionTarget = null;
+        this.taaPreviousPositions = [];
         this.restPose = null;
         this.helper = new MMDAnimationHelper({ afterglow: 0, sync: true });
         this.secondaryMotion = new SecondaryMotion();
@@ -262,6 +322,7 @@ export class LivePortraitRuntime {
         this.rimLight = null;
         this.characterShadowLight = null;
         this.ensurePromise = null;
+        livePictureRuntimes.add(this);
         if (canvas) this.setupRenderer(canvas);
     }
 
@@ -295,6 +356,7 @@ export class LivePortraitRuntime {
         this.postPass = new GakumasPostPass(this.renderer, { keepAlpha: true });
         this.postPass.enabled = true;
         this.postPass.setModule('taa', true);
+        this.syncPictureOptions();
         this.scene = new THREE.Scene();
         this.cameraFrameReady = false;
         this.camera = new THREE.PerspectiveCamera(36, 1, 0.1, 1000);
@@ -774,7 +836,7 @@ export class LivePortraitRuntime {
 
     catalogItems() {
         const buckets = this.map?.buckets || [];
-        return buckets.flatMap(bucket => bucket.families.flatMap(family => family.items.map(item => ({
+        return filterPreferredSitItems(buckets.flatMap(bucket => bucket.families.flatMap(family => family.items.map(item => ({
             ...item,
             key: item.stem,
             catalog: {
@@ -785,7 +847,7 @@ export class LivePortraitRuntime {
                 phase: item.phase,
                 additive: item.additive,
             },
-        })))).filter(item => ['cmmn', this.idolId || LIVE_PORTRAIT_IDOL_ID].includes(item.character));
+        })))).filter(item => ['cmmn', this.idolId || LIVE_PORTRAIT_IDOL_ID].includes(item.character)));
     }
 
     async setFacialEffects(effects = []) {
@@ -816,6 +878,10 @@ export class LivePortraitRuntime {
         let index = -1;
         if (family === 'idle') {
             index = findIdlePlaylistIndex(catalog, this.idolId || LIVE_PORTRAIT_IDOL_ID);
+            if (index < 0) {
+                await this.playPlannedStandIn({ play, skipFace });
+                return -1;
+            }
         } else {
             index = findGesturePlaylistIndex(catalog, family, this.idolId || LIVE_PORTRAIT_IDOL_ID, {
                 preferPairing: preferPairing || (skipFace ? 'bodyOnly' : 'paired'),
@@ -848,6 +914,38 @@ export class LivePortraitRuntime {
             || playlistClipIds(entry).some(id => files.some(file => file.id === id)));
         if (play && playlistIndex >= 0) this.playPlaylistIndex(playlistIndex, { skipFace, fade: MOTION_FADE.standing });
         return playlistIndex;
+    }
+
+    plannedStandIn() {
+        const map = this.plannedPerformances;
+        if (!map) return null;
+        for (const [speaker, item] of map) {
+            if (String(speaker).endsWith('(待机)') && item?.body) return item;
+        }
+        return null;
+    }
+
+    async playPlannedStandIn({ play = false, skipFace = false } = {}) {
+        const item = this.plannedStandIn();
+        if (!item?.body || !this.model) return false;
+        let files = motionAssetUrls(item, this.config, this.indexByPack);
+        if (skipFace) files = files.filter(file => file.kind === 'body');
+        if (!files.length || files.some(file => file.guessed)) return false;
+        await this.importMotionEntries(files.map(file => ({ ...file, label: item.label })));
+        const clips = files.map(file => {
+            const source = this.actions.get(file.id)?.clip;
+            if (!source) return null;
+            const tracks = source.tracks.filter(track => /\.morphTargetInfluences\[/.test(track.name) === (file.kind === 'face'));
+            if (!tracks.length) return null;
+            return {
+                id: file.id,
+                kind: file.kind,
+                clip: new THREE.AnimationClip(`${file.id}:${file.kind}`, source.duration, tracks.map(track => track.clone())),
+            };
+        });
+        if (clips.some(clip => !clip)) return false;
+        if (!play) return true;
+        return this.playPlaylistIndex(-1, { item, clips, fade: MOTION_FADE.standing });
     }
 
     cancelPerformance() {
@@ -895,7 +993,9 @@ export class LivePortraitRuntime {
             cue = parsePortraitCue('藤田琴音(待机)');
         }
         if (cue.mode !== 'additive') this.clearAdditiveClip();
-        const key = cue.bodySelector
+        const key = cue.mode === 'file'
+            ? `file:${cue.file}`
+            : cue.bodySelector
             ? `${cue.mode}:${cue.gesture}:${cue.bodySelector}:${cue.face}`
             : `${cue.mode}:${cue.gesture}:${cue.face}`;
         const catalog = this.catalogItems().filter(item => motionAvailability(item, this.indexByPack).ready);
@@ -907,7 +1007,7 @@ export class LivePortraitRuntime {
         if (!item) return false;
         if (previousSelection && item.body === previousSelection.body && item.face === previousSelection.face) return true;
         const files = motionAssetUrls(item, this.config, this.indexByPack);
-        if (this.idolId === 'nasr' && !item.face && item.body) {
+        if (cue.mode !== 'file' && this.idolId === 'nasr' && !item.face && item.body) {
             const idle = await this.ensureFamily('idle', { play: !firstFrame, skipFace: true });
             if (!isCurrent() || generation !== this.performanceGeneration) return false;
             if (firstFrame && idle >= 0) this.prepareStageFirstFrame(idle);
@@ -921,7 +1021,7 @@ export class LivePortraitRuntime {
             if (!source) return false;
             return this.playAdditiveClip(source, files[0].id);
         }
-        if (files.length !== 2 || files.some(file => file.guessed)) return false;
+        if (cue.mode === 'file' ? (!files.length || files.some(file => file.guessed)) : (files.length !== 2 || files.some(file => file.guessed))) return false;
         await this.importMotionEntries(files.map(file => ({ ...file, label: item.label })));
         if (generation !== this.performanceGeneration || !isCurrent()) return false;
         this.performanceClips ||= new Map();
@@ -1090,7 +1190,9 @@ export class LivePortraitRuntime {
                     complete = false;
                     continue;
                 }
-            } else if ((files.length !== 2 && !(this.idolId === 'nasr' && files.length === 1 && !item.face)) || files.some(file => file.guessed)) {
+            } else if (cue.mode === 'file'
+                ? (!files.length || files.some(file => file.guessed))
+                : ((files.length !== 2 && !(this.idolId === 'nasr' && files.length === 1 && !item.face)) || files.some(file => file.guessed))) {
                 complete = false;
                 continue;
             }
@@ -1122,9 +1224,9 @@ export class LivePortraitRuntime {
                 console.warn('[LivePortrait] motion failed', entry.id, error);
             }
         }
-        this.playlist = sortPlaylistByCatalog(buildPlaylist([...this.actions.values()]
+        this.playlist = sortPlaylistByCatalog(filterPreferredSitItems(buildPlaylist([...this.actions.values()]
             .filter(entry => !entry.additive)
-            .map(({ id, label, kind }) => ({ id, label, kind }))));
+            .map(({ id, label, kind }) => ({ id, label, kind })))));
     }
 
     captureRestPose(model) {
@@ -1244,7 +1346,16 @@ export class LivePortraitRuntime {
         const fromItem = this.playlistIndex >= 0 ? this.playlist[this.playlistIndex] : null;
         let ids = playlistClipIds(item);
         if (options.skipFace) ids = ids.filter(id => this.actions.get(id)?.kind === 'body' || id === item.body);
-        const clips = options.clips || ids.map(id => ({ id, clip: this.actions.get(id)?.clip, kind: this.actions.get(id)?.kind || '' })).filter(entry => entry.clip);
+        const sourceClips = options.clips || ids.map(id => {
+            const source = this.actions.get(id)?.clip;
+            const kind = this.actions.get(id)?.kind || '';
+            return {
+                id,
+                clip: source,
+                kind,
+            };
+        });
+        const clips = sourceClips.filter(entry => entry.clip);
         if (!clips.length) return false;
         const mixer = this.ensureMixer();
         if (!mixer) return false;
@@ -1437,6 +1548,69 @@ export class LivePortraitRuntime {
         if (!this.paused) this.applyCrowdRendering();
     }
 
+    setPerformanceMonitoring(enabled = true) {
+        this.performanceMonitor.enabled = Boolean(enabled);
+        this.performanceMonitor.bucket = createPerformanceBucket();
+        if (this.renderer?.info) {
+            this.renderer.info.autoReset = !this.performanceMonitor.enabled;
+            if (this.performanceMonitor.enabled) this.renderer.info.reset();
+        }
+    }
+
+    getPerformanceSnapshot(meta = {}) {
+        const monitor = this.performanceMonitor;
+        if (monitor.model !== this.model) {
+            monitor.model = this.model;
+            monitor.modelStats = collectModelComplexity(this.model);
+        }
+        const render = this.renderer?.info?.render || {};
+        const memory = this.renderer?.info?.memory || {};
+        const budget = this.crowdBudget || portraitCrowdBudget({ devicePixelRatio: globalThis.devicePixelRatio || 1 });
+        return {
+            idolId: String(meta.idolId || this.canvas?.dataset?.idol || ''),
+            costume: String(meta.costume || this.canvas?.dataset?.costume || ''),
+            present: meta.present === true,
+            ready: Boolean(this.ready),
+            paused: Boolean(this.paused),
+            modelFormat: this.modelFormat || '',
+            modelKey: this.modelKey || '',
+            model: monitor.modelStats || collectModelComplexity(null),
+            renderer: {
+                calls: Number(render.calls) || 0,
+                triangles: Number(render.triangles) || 0,
+                points: Number(render.points) || 0,
+                lines: Number(render.lines) || 0,
+                geometries: Number(memory.geometries) || 0,
+                textures: Number(memory.textures) || 0,
+                pixelRatio: Number(this.renderer?.getPixelRatio?.()) || 0,
+                width: Number(this.renderer?.domElement?.width) || 0,
+                height: Number(this.renderer?.domElement?.height) || 0,
+            },
+            budget: {
+                pixelRatio: Number(budget.pixelRatio) || 0,
+                shadowMap: Number(budget.shadowMap) || 0,
+                taa: budget.taa !== false,
+                outline: budget.outline !== false,
+                drawStride: Number(budget.drawStride) || 1,
+                updateStride: Number(budget.updateStride) || 1,
+            },
+            physics: this.secondaryMotionBound && this.secondaryMotion?.runtime
+                ? {
+                    fixedSteps: Number(this.secondaryMotion.runtime.fixedSteps) || 0,
+                    staticCollisionHits: Number(this.secondaryMotion.runtime.staticCollisionHits) || 0,
+                    chainCollisionHits: Number(this.secondaryMotion.runtime.chainCollisionHits) || 0,
+                    outputBones: Number(this.secondaryMotion.runtime.lastOutputBones) || 0,
+                }
+                : null,
+            frame: snapshotPerformanceBucket(monitor.bucket),
+        };
+    }
+
+    recordPerformanceFrame(sample) {
+        if (!this.performanceMonitor.enabled) return;
+        recordPerformanceSample(this.performanceMonitor.bucket, sample);
+    }
+
     applyCrowdRendering() {
         const budget = this.crowdBudget || portraitCrowdBudget({ devicePixelRatio: globalThis.devicePixelRatio || 1 });
         if (this.renderer && this.renderer.getPixelRatio() !== budget.pixelRatio) {
@@ -1446,10 +1620,18 @@ export class LivePortraitRuntime {
         }
         this.crowdShadowMap = budget.shadowMap;
         if (this.outlineEffect) this.outlineEffect.enabled = budget.outline;
-        if (this.postPass && this.postPass.modules.taa !== budget.taa) {
-            this.postPass.setModule('taa', budget.taa);
+        this.syncPictureOptions();
+    }
+
+    syncPictureOptions({ render = false } = {}) {
+        const budget = this.crowdBudget || portraitCrowdBudget({ devicePixelRatio: globalThis.devicePixelRatio || 1 });
+        const nextTaa = livePicture.taa && budget.taa;
+        if (this.postPass && this.postPass.modules.taa !== nextTaa) {
+            this.postPass.setModule('taa', nextTaa);
             this.postPass.resetHistory = true;
         }
+        this.lookPass?.setPlateSharpen(livePicture.plateSharpen);
+        if (render && !this.paused && this.renderer) this.renderFrame();
     }
 
     releasePresentationBuffers() {
@@ -1533,17 +1715,37 @@ export class LivePortraitRuntime {
                 return;
             }
             this.frameId = requestAnimationFrame(tick);
+            const monitor = this.performanceMonitor.enabled;
+            const frameStarted = monitor ? globalThis.performance.now() : 0;
             const delta = Math.min(this.clock.getDelta(), 0.05);
             const stride = this.crowdBudget?.drawStride || 1;
+            const updateStride = this.crowdBudget?.updateStride || 1;
             this.crowdSerial = (this.crowdSerial + 1) >>> 0;
             const drawThisFrame = stride <= 1 || this.crowdSerial % stride === 1;
+            const updateThisFrame = updateStride <= 1 || this.crowdSerial % updateStride === 1;
             this.physicsDebt = Math.min(0.1, (this.physicsDebt || 0) + delta);
             // Background actors in a group draw every other frame. Skipping the
             // skeleton update keeps physics from sampling a half-applied pose.
-            if (!drawThisFrame) return;
+            if (!drawThisFrame) {
+                this.recordPerformanceFrame({ now: monitor ? globalThis.performance.now() : 0, skipped: true });
+                return;
+            }
+            // Background actors keep their last animated pose on some draw
+            // frames. This avoids paying for full skeleton and secondary-motion
+            // simulation for every off-focus idol while the speaker stays fluid.
+            if (!updateThisFrame) {
+                const renderStarted = monitor ? globalThis.performance.now() : 0;
+                this.renderFrame();
+                const now = monitor ? globalThis.performance.now() : 0;
+                this.recordPerformanceFrame({ now, totalMs: monitor ? now - frameStarted : 0, updateMs: 0, renderMs: monitor ? now - renderStarted : 0, skipped: true });
+                return;
+            }
             const step = Math.min(this.physicsDebt, 0.05);
             this.physicsDebt = 0;
+            const updateStarted = monitor ? globalThis.performance.now() : 0;
+            const phases = {};
             if (this.model) {
+                const animationStarted = monitor ? globalThis.performance.now() : 0;
                 this.secondaryMotion?.restoreBeforeAnimation?.();
                 if (this.talkTakeoverActive) {
                     this.restoreTalkBaseMouth();
@@ -1552,26 +1754,94 @@ export class LivePortraitRuntime {
                 if (this.modelFormat === 'glb') this.animationMixer?.update(step);
                 else this.helper.update(step);
                 this.flushPendingAnimationFinishes();
-                if (this.secondaryMotionBound) this.secondaryMotion.update(step);
+                // Keep root-motion sampling current without walking every bone
+                // and mesh. SecondaryMotion refreshes the individual spring
+                // paths it reads, while the renderer handles the full tree.
+                this.model.updateWorldMatrix?.(true, false);
+                if (monitor) phases.animationMs = globalThis.performance.now() - animationStarted;
+                const secondaryStarted = monitor ? globalThis.performance.now() : 0;
+                if (this.secondaryMotionBound) {
+                    const backgroundPhysics = updateStride > 1;
+                    this.secondaryMotion.update(step, backgroundPhysics
+                        ? { maxFixedSteps: 1, dropRemainder: true }
+                        : undefined);
+                }
+                if (monitor) phases.secondaryMotionMs = globalThis.performance.now() - secondaryStarted;
+                const facialStarted = monitor ? globalThis.performance.now() : 0;
                 this.facialEffects.update();
+                if (monitor) phases.facialMs = globalThis.performance.now() - facialStarted;
+                const attentionStarted = monitor ? globalThis.performance.now() : 0;
                 this.updateAttention(step);
                 this.updateTalkingMorph(step);
                 this.harvestFades();
-                this.model.updateMatrixWorld(true);
+                if (monitor) phases.attentionMs = globalThis.performance.now() - attentionStarted;
             }
-            this.resize();
-            this.camera.updateMatrixWorld();
-            this.updateGakumasUniforms();
-            this.drawPortrait();
+            const updateMs = monitor ? globalThis.performance.now() - updateStarted : 0;
+            const renderStarted = monitor ? globalThis.performance.now() : 0;
+            this.renderFrame();
+            const now = monitor ? globalThis.performance.now() : 0;
+            this.recordPerformanceFrame({ now, totalMs: monitor ? now - frameStarted : 0, updateMs, renderMs: monitor ? now - renderStarted : 0, phases });
         };
         this.frameId = requestAnimationFrame(tick);
     }
 
+    sampledTaaMotion() {
+        const target = this.animationTarget || this.model;
+        if (!target) {
+            this.taaMotionTarget = null;
+            this.taaPreviousPositions = [];
+            return 0;
+        }
+        if (target !== this.taaMotionTarget) {
+            this.taaMotionTarget = target;
+            this.taaPreviousPositions = [];
+        }
+        const bones = target.skeleton?.bones || [];
+        const byName = new Map(bones.map(bone => [bone.name, bone]));
+        const current = ['Head', 'LeftHand', 'RightHand', 'LeftFoot', 'RightFoot', 'LeftShoulder', 'RightShoulder']
+            .map(name => byName.get(name))
+            .filter(Boolean)
+            .map(bone => {
+                const position = bone.getWorldPosition(new THREE.Vector3());
+                return [position.x, position.y, position.z];
+            });
+        const motion = motionFromPositions(current, this.taaPreviousPositions, 18);
+        this.taaPreviousPositions = current;
+        return motion;
+    }
+
+    taaMotionHint() {
+        const mixer = this.animationMixer || this.helper?.objects?.get(this.animationTarget || this.model)?.mixer;
+        const sampledMotion = this.sampledTaaMotion();
+        if (this.stageCameraAnimation) return 0.72;
+        if (mixer?.timeScale && (this.liveActions.length || this.additiveAction)) return Math.max(0.22, sampledMotion);
+        if (this.fadingActions.length) return 0.2;
+        if (this.talking || this.talkLevelDriven) return Math.max(0.12, sampledMotion);
+        return sampledMotion;
+    }
+
     renderFrame() {
         this.resize();
-        this.camera.updateMatrixWorld();
-        this.updateGakumasUniforms();
-        this.drawPortrait();
+        if (this.performanceMonitor.enabled && this.renderer?.info) {
+            // Three resets renderer.info after each renderer.render() by
+            // default. A portrait frame contains several passes, so keep one
+            // accumulator for the whole frame while diagnostics are enabled.
+            this.renderer.info.autoReset = false;
+            this.renderer.info.reset();
+        }
+        if (this.postPass?.active) this.postPass.setMotionHint(this.taaMotionHint());
+        const draw = () => {
+            this.camera.updateMatrixWorld();
+            this.updateGakumasUniforms();
+            this.drawPortrait();
+        };
+        if (this.stageScene && this.sceneFreeLook) this.sceneFreeLook.withCamera(this.camera, draw);
+        else draw();
+    }
+
+    setActorPose(pose) {
+        if (!this.model) return false;
+        return applyActorPose(this.model, pose || null);
     }
 
     setStageScene(stage, shot = 'medium', position = 'center', cameraOptions = {}) {
@@ -1592,7 +1862,7 @@ export class LivePortraitRuntime {
                 this.camera.fov = saved.fov;this.camera.near = saved.near;this.camera.far = saved.far;
                 this.camera.updateProjectionMatrix();
                 this.postPass?.apply(null);
-                this.postPass?.setModule('taa', true);
+                this.syncPictureOptions();
                 if (this.postPass) this.postPass.resetHistory = true;
             }
             this.stageSceneViewKey = '';
@@ -1612,6 +1882,7 @@ export class LivePortraitRuntime {
             this.camera.up.fromArray(view.up);
             this.camera.lookAt(new THREE.Vector3().fromArray(view.target));
             this.camera.fov = view.fov; this.camera.near = view.near; this.camera.far = view.far;
+            applyCameraPose(this.camera, cameraOptions?.pose);
             stage.ensureCameraRange(this.camera);
             this.camera.updateProjectionMatrix();
         };
@@ -1627,7 +1898,15 @@ export class LivePortraitRuntime {
             };
             this.stageCameraAnimation = requestAnimationFrame(tick);
         }
-        const key = stage.url + '|' + shot + '|' + position + '|' + (cameraOptions?.preset || '') + '|' + (cameraOptions?.motion || '');') + ';
+        const key = [
+            stage.url,
+            shot,
+            position,
+            cameraOptions?.preset || '',
+            cameraOptions?.motion || '',
+            cameraOptions?.duration || '',
+            cameraOptions?.ease || '',
+        ].join('|');
         if (this.postPass && key !== this.stageSceneViewKey) this.postPass.apply(stage.post);
         this.stageSceneViewKey = key;
         this.applyCrowdRendering();
@@ -1643,6 +1922,7 @@ export class LivePortraitRuntime {
         if (!next) {
             this.plateTexture?.dispose();
             this.plateTexture = null;
+            this.syncOutlineWeight();
             if (changed && this.postPass) this.postPass.resetHistory = true;
             return;
         }
@@ -1659,7 +1939,22 @@ export class LivePortraitRuntime {
             this.plateTexture.needsUpdate = true;
         }
         if (this.plateMaterial) this.plateMaterial.uniforms.gkPlate.value = this.plateTexture;
+        this.syncOutlineWeight();
         if (changed && this.postPass) this.postPass.resetHistory = true;
+    }
+
+    syncOutlineWeight() {
+        // The 2D plate sharpens opaque edges, and the portrait camera sits closer,
+        // so the same view-space stroke reads heavier than it does in a 3D scene.
+        const thickness = this.plateTexture ? 0.0032 : 0.004;
+        this.outline.thickness = thickness;
+        this.model?.traverse(child => {
+            if (!child.isMesh) return;
+            const materials = Array.isArray(child.material) ? child.material : [child.material];
+            for (const item of materials) {
+                if (item?.userData?.outlineParameters) item.userData.outlineParameters.thickness = thickness;
+            }
+        });
     }
 
     setShotFrame({ scale = 1, shiftX = 0, originY } = {}) {
@@ -1694,7 +1989,13 @@ export class LivePortraitRuntime {
         const image = this.plateTexture?.image;
         const width = this.renderer?.domElement?.width || image?.width || 1;
         const height = this.renderer?.domElement?.height || image?.height || 1;
-        const cover = stagePlateCover(width, height, image?.width || 1, image?.height || 1, this.platePan.x, this.platePan.y);
+        const shotScale = this.shotFrame?.scale || 1;
+        const cover = zoomPlateCover(
+            stagePlateCover(width, height, image?.width || 1, image?.height || 1, this.platePan.x, this.platePan.y),
+            shotScale * (backgroundDepthBlur(shotScale) ? 1.08 : 1),
+            0.5,
+            this.shotFrame?.originY ?? 0.5,
+        );
         this.plateCover.set(cover.scaleX, cover.scaleY, cover.offsetX, cover.offsetY);
         return this.plateCover;
     }
@@ -1716,7 +2017,7 @@ export class LivePortraitRuntime {
         );
         if (this.stageScene && this.postPass?.active && this.lookPass?.enabled) {
             if (this.outlineEffect) this.outlineEffect.autoClear = true;
-            const source = this.postPass.render(drawCharacter, this.camera, { present: false });
+            const source = this.postPass.render(drawCharacter, this.camera, { present: false, velocityRoot: this.scene });
             this.lookPass.presentTexture(source);
             return;
         }
@@ -1726,7 +2027,7 @@ export class LivePortraitRuntime {
                 if (this.outlineEffect) this.outlineEffect.autoClear = !drewPlate;
                 drawCharacter();
             };
-            const source = this.postPass.render(draw, this.camera, { present: false });
+            const source = this.postPass.render(draw, this.camera, { present: false, velocityRoot: this.scene });
             this.lookPass.presentTexture(source, { texture: this.plateTexture, cover: this.plateCover });
             return;
         }
@@ -2134,6 +2435,10 @@ export class LivePortraitRuntime {
         if (!this.gakumasUniforms.size || !this.keyLight || !this.camera) return;
         const direction = this.gakumasLightDirection.copy(matcapKeyDirection(GAKUMAS_LOOK.keyAzimuth, GAKUMAS_LOOK.keyElevation));
         const axis = this.gakumasHeadBone || this.model;
+        // The renderer refreshes the complete scene hierarchy immediately
+        // before the draw. Uniform setup only needs the selected head/model
+        // path, so update that path without walking every mesh and helper node.
+        axis?.updateWorldMatrix?.(true, false);
         this.hairCoverStage.update(axis, this.gakumasPasses.hairCoverMinimum);
         if (axis) this.gakumasHeadRight.setFromMatrixColumn(axis.matrixWorld, 0).normalize();
         const shadowLight = this.characterShadowLight;
@@ -2180,6 +2485,7 @@ export class LivePortraitRuntime {
     }
 
     dispose() {
+        livePictureRuntimes.delete(this);
         this.pause();
         const mixer = this.model ? this.ensureMixer() : null;
         this.clearAdditiveClip();
@@ -2206,3 +2512,4 @@ export class LivePortraitRuntime {
         if (singleton === this) singleton = null;
     }
 }
+

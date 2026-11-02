@@ -1,6 +1,6 @@
 import { BEAT_CUE_IDS, BEAT_EFFECT_IDS, BEAT_FACE_IDS, BEAT_OVERLAY_CUE_IDS } from './beat-cues.js?v=20261011-stage-cue-rules-v4';
-import { BEAT_NPC_SPEAKER_NAMES } from './beat-npc-portraits.js?v=20261014-npc-portraits-v1';
-import { sceneIdolId } from './scene-protocol.js?v=20261006-star-eyes-v1';
+import { BEAT_NPC_SPEAKER_NAMES } from './beat-npc-portraits.js?v=20261102-krnh-3d-v1';
+import { sceneIdolId } from './scene-protocol.js?v=20261102-krnh-3d-v1';
 
 export const BEAT_ACTOR_NAMES = Object.freeze({
     kotone: '藤田琴音',
@@ -16,6 +16,10 @@ export const BEAT_ACTOR_NAMES = Object.freeze({
     ttmr: '月村手毬',
     kcna: '仓本千奈',
     shro: '筱泽广',
+    krnh: '贺阳燐羽',
+    燐羽: '贺阳燐羽',
+    小燐: '贺阳燐羽',
+    賀陽燐羽: '贺阳燐羽',
     amao: '有村麻央',
     fktn: '藤田琴音',
     hrnm: '姬崎莉波',
@@ -54,15 +58,21 @@ export const BEAT_OVERLAYS = BEAT_OVERLAY_CUE_IDS;
 export const BEAT_EFFECTS = BEAT_EFFECT_IDS;
 
 export const BEAT_SHOTS = Object.freeze(['wide', 'medium', 'close', 'reaction', 'keep']);
-export const BEAT_CAMERA_PRESETS = Object.freeze(['medium', 'close', 'side', 'two-shot', 'emphasis']);
-export const BEAT_CAMERA_MOTIONS = Object.freeze(['none', 'lower', 'raise', 'turn', 'push-in', 'pull-out']);
-export const BEAT_CAMERA_EASES = Object.freeze(['linear', 'out-sine', 'out-quad', 'in-out-sine']);
+// `camera` is the shared Beat framing override. It intentionally uses the
+// same vocabulary as `shot` so the exact same value can be applied to both
+// flat (2D) backgrounds and 3D scenes.
+export const BEAT_CAMERA_PRESETS = BEAT_SHOTS;
+// Kept as empty compatibility exports for older imports. Named camera motion
+// fields were never part of the Beat protocol and must not drive playback.
+export const BEAT_CAMERA_MOTIONS = Object.freeze([]);
+export const BEAT_CAMERA_EASES = Object.freeze([]);
 export const BEAT_POSITIONS = Object.freeze(['left', 'center', 'right']);
 
 export function resolveBeatCameraPreset(value, shot = 'medium') {
     const key = String(value || '').trim().toLowerCase();
     if (BEAT_CAMERA_PRESETS.includes(key)) return key;
-    return ({ close: 'close', reaction: 'side', wide: 'medium' }[String(shot || '').trim().toLowerCase()] || 'medium');
+    const fallback = String(shot || '').trim().toLowerCase();
+    return BEAT_CAMERA_PRESETS.includes(fallback) ? fallback : 'medium';
 }
 
 export function stagePositionOffset(position) {
@@ -95,10 +105,73 @@ export function stagePlateCover(viewWidth, viewHeight, imageWidth, imageHeight, 
     };
 }
 
+function clampUnit(value, fallback = 0.5) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return fallback;
+    return Math.min(1, Math.max(0, number));
+}
+
+/** Shrink the cover window around a viewport point. Zoom 1 keeps the cover. */
+export function zoomPlateCover(cover, zoom = 1, focusX = 0.5, focusY = 0.5) {
+    const source = cover && typeof cover === 'object' ? cover : {};
+    const z = Math.max(0.05, Number(zoom) || 1);
+    const fx = clampUnit(focusX);
+    const fy = clampUnit(focusY);
+    const baseX = Number(source.scaleX) || 1;
+    const baseY = Number(source.scaleY) || 1;
+    const baseOffsetX = Number(source.offsetX) || 0;
+    const baseOffsetY = Number(source.offsetY) || 0;
+    let scaleX = baseX / z;
+    let scaleY = baseY / z;
+    const anchorX = baseOffsetX + baseX * fx;
+    const anchorY = baseOffsetY + baseY * fy;
+    let offsetX = anchorX - scaleX * fx;
+    let offsetY = anchorY - scaleY * fy;
+    if (scaleX > 1) {
+        offsetX += (scaleX - 1) * fx;
+        scaleX = 1;
+    }
+    if (scaleY > 1) {
+        offsetY += (scaleY - 1) * fy;
+        scaleY = 1;
+    }
+    offsetX = Math.min(Math.max(offsetX, 0), 1 - scaleX);
+    offsetY = Math.min(Math.max(offsetY, 0), 1 - scaleY);
+    return { scaleX, scaleY, offsetX, offsetY };
+}
+
+export function plateCoverToBackground(cover) {
+    const scaleX = Number(cover?.scaleX) || 1;
+    const scaleY = Number(cover?.scaleY) || 1;
+    const align = (offset, scale) => (scale >= 0.999 ? 50 : (Number(offset) || 0) / (1 - scale) * 100);
+    return {
+        size: `${100 / scaleX}% ${100 / scaleY}%`,
+        position: `${align(cover?.offsetX, scaleX)}% ${align(cover?.offsetY, scaleY)}%`,
+    };
+}
+
+/** Close and bust shots soften a flat photo so the face stays in front of the room. */
+export function backgroundDepthBlur(zoom) {
+    const z = Number(zoom) || 1;
+    if (z >= 2.2) return 8;
+    if (z >= 1.35) return 3;
+    return 0;
+}
+
 export function buildBackgroundPlan(beats) {
     return [...new Set((Array.isArray(beats) ? beats : [])
         .map(beat => String(beat?.background || '').trim())
         .filter(Boolean))];
+}
+
+export function preparedStageCovers(loaded = {}, next = {}) {
+    if (!loaded.ready) return false;
+    const cast = Array.isArray(loaded.cast) ? loaded.cast : [];
+    const backgrounds = new Set(Array.isArray(loaded.backgrounds) ? loaded.backgrounds : []);
+    const nextCast = Array.isArray(next.cast) ? next.cast : [];
+    const nextBackgrounds = Array.isArray(next.backgrounds) ? next.backgrounds : [];
+    if (!nextCast.length || !nextCast.every(id => cast.includes(id))) return false;
+    return nextBackgrounds.every(name => backgrounds.has(name));
 }
 
 export function beatBackgroundChanged(previousBackground, nextBackground) {

@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#101a2d">
+  <title>Beat 多角色性能监测</title>
+  <link rel="stylesheet" href="./performance-monitor.css?v=20261030-perf-monitor-v7">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./vendor/three/build/three.module.js",
+        "three/addons/": "./vendor/three/examples/jsm/"
+      }
+    }
+  </script>
+  <script>window.__HATSU_PERF_MONITOR_ENABLED = true;</script>
+</head>
+<body>
+  <main class="perf-shell">
+    <header class="perf-header">
+      <div>
+        <p class="perf-kicker">MMD DIALOGUE STAGE / PROFILER</p>
+        <h1>Beat 多角色性能监测</h1>
+        <p>把同一段多角色 Beat 放进来运行，观察每个角色的动画更新、渲染、模型复杂度和当前 crowd budget。</p>
+      </div>
+      <nav>
+        <a href="./beat-player.html">返回 Beat 播放器</a>
+        <button id="copySnapshotBtn" type="button">复制快照</button>
+      </nav>
+    </header>
+
+    <section class="perf-grid">
+      <aside class="perf-panel perf-editor">
+        <div class="perf-panel-heading"><span>TEST SCRIPT</span><strong>多角色脚本</strong></div>
+        <textarea id="perfScript" spellcheck="false" aria-label="性能测试 Beat"></textarea>
+        <div class="perf-actions">
+          <button id="runPerfBtn" class="is-primary" type="button">加载并播放</button>
+          <button id="stopPerfBtn" type="button">停止</button>
+          <button id="resetPerfBtn" type="button">载入四人示例</button>
+        </div>
+        <p id="perfStatus" class="perf-status" role="status">等待测试脚本。</p>
+        <div class="perf-help">
+          <strong>怎么看</strong>
+          <p>先运行 5–10 秒。重点看总帧时间、动画更新、渲染时间、Draw Call 和三角形数。若渲染时间随角色数线性上升，优先优化多画布与后处理；若动画更新时间高，优先优化骨骼、SecondaryMotion 和面部更新。</p>
+        </div>
+      </aside>
+
+      <section class="perf-stage-panel">
+        <div id="beatStage" class="beat-stage" aria-label="性能测试舞台">
+          <div id="beatBackground" class="beat-background" aria-hidden="true"></div>
+          <div class="story-chrome">
+            <div id="beatDialogueCard" class="dialogue-card" tabindex="0" aria-label="对话框">
+              <div class="speaker-plate"><strong id="beatSpeaker">等待播放</strong></div>
+              <p id="beatText">运行脚本后，这里会播放当前 Beat。</p>
+              <button id="advanceBeatBtn" class="dialogue-advance" type="button" aria-label="下一段"></button>
+            </div>
+            <div class="player-toolbar">
+              <button id="previousBeatBtn" type="button">上一段</button>
+              <button id="playBeatBtn" type="button">播放</button>
+              <button id="nextBeatBtn" type="button">下一段</button>
+              <button id="stopBeatBtn" type="button">停止</button>
+              <label><input id="beatAutoPlay" type="checkbox" checked> 自动</label>
+            </div>
+          </div>
+        </div>
+        <span id="beatProgress" hidden>—</span>
+        <span id="beatShot" hidden>镜头：—</span>
+        <span id="beatStatus" hidden></span>
+        <ul id="beatDiagnostics" hidden></ul>
+      </section>
+
+      <section class="perf-panel perf-dashboard" aria-live="polite">
+        <div class="perf-panel-heading"><span>LIVE SAMPLE</span><strong>运行指标</strong></div>
+        <div id="perfSummary" class="perf-summary"></div>
+        <div class="perf-panel-heading perf-subheading"><span>ACTORS</span><strong>角色明细</strong></div>
+        <div id="perfActors" class="perf-actors"><p class="perf-empty">还没有运行数据。</p></div>
+        <div class="perf-panel-heading perf-subheading"><span>HINTS</span><strong>初步判断</strong></div>
+        <ul id="perfRecommendations" class="perf-recommendations"><li>运行脚本后显示建议。</li></ul>
+      </section>
+    </section>
+  </main>
+    <script type="module" src="./performance-monitor.js?v=20261030-perf-diagnostic-v8"></script>
+</body>
+</html>
+

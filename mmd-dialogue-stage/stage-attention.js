@@ -9,6 +9,11 @@ export class StageAttentionController {
         this.target = null;
         this.current = { x: 0, y: 0 };
         this.duration = 0;
+        this.neutralTarget = { x: 0, y: 0 };
+        this.yawAxis = new Vector3(0, 1, 0);
+        this.pitchAxis = new Vector3(1, 0, 0);
+        this.offsetQuaternion = new Quaternion();
+        this.pitchQuaternion = new Quaternion();
     }
 
     static resolveTarget(actorId, targetId, positions = {}) {
@@ -37,13 +42,14 @@ export class StageAttentionController {
 
     update(delta = 1 / 60) {
         if (!this.model) return;
-        const target = this.target || { x: 0, y: 0 };
+        const target = this.target || this.neutralTarget;
         const amount = this.duration > 0 ? Math.min(1, (Number(delta) || 0) / (this.duration / 1000)) : 1 - Math.pow(0.001, Math.min(Math.max(Number(delta) || 0, 0), 0.2) * 8);
         this.current.x = MathUtils.lerp(this.current.x, target.x, amount);
         this.current.y = MathUtils.lerp(this.current.y, target.y, amount);
-        const offset = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), MathUtils.degToRad(this.current.x * 26));
-        offset.multiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), MathUtils.degToRad(-this.current.y * 8)));
-        this.model.quaternion.copy(this.baseQuaternion).multiply(offset);
+        this.offsetQuaternion.setFromAxisAngle(this.yawAxis, MathUtils.degToRad(this.current.x * 26));
+        this.pitchQuaternion.setFromAxisAngle(this.pitchAxis, MathUtils.degToRad(-this.current.y * 8));
+        this.offsetQuaternion.multiply(this.pitchQuaternion);
+        this.model.quaternion.copy(this.baseQuaternion).multiply(this.offsetQuaternion);
     }
 }
 

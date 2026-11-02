@@ -525,6 +525,10 @@ export function isBeatMotionCandidate(item, family) {
 export function isBeatPairedCue(value) { return BEAT_PAIRED_CUE_IDS.includes(String(value || '').trim().toLowerCase()); }
 export function parseBeatCueToken(value) {
     const token = String(value || '').trim();
+    if (token.startsWith(BEAT_FILE_PREFIX)) {
+        const file = token.slice(BEAT_FILE_PREFIX.length);
+        return file ? { mode: 'file', file, gesture: '', face: '', beat: true } : null;
+    }
     const paired = /^__beat-paired__([^_]+)$/u.exec(token);
     if (paired && isBeatPairedCue(paired[1])) {
         const spec = BEAT_PAIRED_CUE_SPECS[paired[1]];
@@ -543,7 +547,32 @@ export function parseBeatCueToken(value) {
     }
     return null;
 }
+const BEAT_FILE_PREFIX = '__beat-file__';
+
+// Stage motion-map filenames, with or without the _b/_f channel and .vmd suffix.
+export function beatMotionFileKey(value) {
+    return String(value || '')
+        .trim()
+        .replace(/\\/gu, '/')
+        .split('/')
+        .pop()
+        .replace(/\.vmd$/iu, '')
+        .replace(/[_-][bf]$/iu, '')
+        .replace(/_/gu, '-')
+        .toLowerCase();
+}
+
+export function isBeatMotionFile(value) {
+    return beatMotionFileKey(value).startsWith('mot-');
+}
+
+export function beatMotionFileToken(value) {
+    const file = String(value || '').trim().replace(/\\/gu, '/').split('/').pop();
+    return file ? `${BEAT_FILE_PREFIX}${file}` : '';
+}
+
 export function resolveBeatCueAlias(value, face = '') {
+    if (isBeatMotionFile(value)) return beatMotionFileToken(value);
     const token = String(value || '').trim().toLowerCase();
     if (token === 'shy') return resolveBeatCueAlias('tereru', face);
     face = BEAT_FACE_ALIASES[String(face).trim().toLowerCase()] || face;

@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f4d7b0">
+  <title>初星日常沙盒</title>
+  <link rel="stylesheet" href="./beat-player.css?v=20261027-bg-zoom-v2">
+  <link rel="stylesheet" href="./sandbox-home.css?v=20261030-landscape-nav-v6">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./vendor/three/build/three.module.js",
+        "three/addons/": "./vendor/three/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body class="sandbox-home-page">
+  <main class="sandbox-home-app">
+    <section id="sandboxStart" class="sandbox-start" hidden>
+      <h1>初星日常</h1>
+      <p>选择要担当的偶像</p>
+      <div id="sandboxStartIdols" class="sandbox-start-idols" role="listbox" aria-label="担当偶像"></div>
+      <button id="sandboxStartBtn" class="sandbox-start-go" type="button">开始育成</button>
+      <button id="sandboxStartWeirdScriptBtn" class="sandbox-start-weird-script" type="button">怪文书模式</button>
+    </section>
+    <section id="sandboxWeirdScriptView" class="sandbox-weird-script-view" hidden aria-label="怪文书制作">
+      <header class="sandbox-weird-script-heading"><div><small>BEAT SCRIPT STUDIO</small><h2>怪文书制作</h2><p>可以交给 AI 生成，也可以直接粘贴完整 Beat，解析资源后开始演出。</p></div><button id="sandboxWeirdScriptBackBtn" type="button">返回担当选择</button></header>
+      <div class="sandbox-weird-script-modes" role="group" aria-label="生成模式">
+        <button id="sandboxWeirdScriptModeFull" type="button" data-weird-mode="full" aria-pressed="true">全文案</button>
+        <button id="sandboxWeirdScriptModeExpand" type="button" data-weird-mode="expand" aria-pressed="false">AI 扩写</button>
+        <button id="sandboxWeirdScriptModeDirect" type="button" data-weird-mode="direct" aria-pressed="false">直接演出</button>
+      </div>
+      <textarea id="sandboxWeirdScriptInput" rows="7" maxlength="200000" placeholder="粘贴完整文案，或写下一个点子让 AI 扩写"></textarea>
+      <div class="sandbox-weird-script-actions"><button id="sandboxWeirdScriptGenerateBtn" type="button">解析并生成 Beat</button><button id="sandboxWeirdScriptContinueBtn" type="button" hidden>继续生成</button><button id="sandboxWeirdScriptEditorBtn" type="button">打开可视化编辑器</button></div>
+      <p id="sandboxWeirdScriptStatus" class="sandbox-weird-script-status" role="status"></p>
+    </section>
+    <header class="sandbox-topbar">
+      <div class="sandbox-day-chip"><small>DAY</small><strong id="sandboxDay">1</strong></div>
+      <button type="button" id="sandboxTimeBtn" class="sandbox-time-pill" data-panel="plan" aria-label="打开快速度过今天"><small>现在</small><strong id="sandboxClock">上午 08:00</strong></button>
+      <div class="sandbox-resource-strip" aria-label="当前资源">
+        <span><b>活动力</b><strong id="sandboxActivity">80/100</strong><em>＋</em></span>
+        <span><b>初星币</b><strong id="sandboxCoins">0</strong><em>＋</em></span>
+        <span title="好感度"><b>好感</b><strong id="sandboxAffinity">0</strong></span>
+      </div>
+      <div class="sandbox-idol-select"><button type="button" data-panel="info"><strong id="sandboxProduceName">藤田琴音</strong><small>担当</small><b>⌄</b></button><button type="button" id="sandboxPhoneCorner" class="sandbox-phone-launch" aria-label="打开小手机"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="2"></rect><circle cx="12" cy="18" r="1"></circle></svg></button><button type="button" data-panel="info" aria-label="设置">设</button></div>
+    </header>
+
+    <section class="sandbox-stage-wrap" aria-label="初星学园主页">
+      <div id="beatStage" class="beat-stage sandbox-stage" data-shot="medium" aria-label="家·教室三维场景">
+        <div id="beatBackground" class="beat-background" aria-hidden="true"></div>
+        <div class="stage-light stage-light-left"></div>
+        <div class="stage-light stage-light-right"></div>
+        <div class="stage-floor"></div>
+        <div class="stage-vignette"></div>
+
+        <div class="sandbox-scene-label"><span class="sandbox-live-dot"></span><span id="sandboxSceneLabel">家·教室 · 午</span></div>
+        <button class="sandbox-banner" type="button" data-panel="quests"><small>本日限定</small><strong>和担当一起<br>完成新的课题</strong><em>NEW / 主线课题</em></button>
+        <button id="sandboxEventHook" class="sandbox-event-hook" type="button" hidden><small>今天</small><strong></strong><em></em></button>
+        <button id="sandboxEventRetryBtn" class="sandbox-event-hook sandbox-event-retry" type="button" hidden><small>今天</small><strong>再试一次</strong><em>这次的事件没写成</em></button>
+
+        <div class="sandbox-side-actions sandbox-side-right" aria-label="右侧入口">
+          <button type="button" data-panel="journal" aria-label="查看每日行动日志"><span>志</span><b>日志</b></button>
+          <button type="button" data-panel="quests"><span>题</span><b>课题</b><i>1</i></button>
+          <button type="button" data-panel="commissions"><span>委</span><b>委托</b></button>
+        </div>
+
+        <div class="sandbox-idol-card">
+          <small>担当育成中</small>
+          <strong id="sandboxIdolCardName">藤田琴音</strong>
+          <span id="sandboxIdolMeta">第 1 日 · 家·教室</span>
+          <span id="sandboxReadiness">Step 1 · First Live 准备中</span>
+        </div>
+
+        <div class="sandbox-story-chrome">
+          <div class="sandbox-dialogue-stack">
+            <div id="beatDialogueCard" class="dialogue-card sandbox-dialogue-card" tabindex="0" aria-label="行动演出对话框">
+              <img id="beatSpeakerPortrait" class="beat-speaker-portrait" hidden alt="" draggable="false">
+              <div class="speaker-plate"><strong id="beatSpeaker">藤田琴音</strong></div>
+              <p id="beatText">正在准备主页……</p>
+              <button id="sandboxWeirdScriptAutoBtn" class="sandbox-weird-auto" type="button" aria-pressed="false">自动</button>
+              <button id="advanceBeatBtn" class="dialogue-advance" type="button" aria-label="下一段"></button>
+            </div>
+            <div class="sandbox-stage-commands">
+              <button id="sandboxBondEpisodeBtn" class="sandbox-bond-button" type="button">第一话</button>
+              <button id="sandboxAreaBtn" class="sandbox-bond-button" type="button" hidden>店内</button>
+              <button id="sandboxPresenceBtn" class="sandbox-bond-button" type="button" aria-haspopup="dialog" aria-controls="sandboxPresenceDialog" hidden>在场</button>
+              <button id="sandboxOrderBtn" class="sandbox-bond-button" type="button">指令</button>
+              <button id="sandboxPassTimeBtn" class="sandbox-bond-button" type="button" hidden>度过</button>
+            </div>
+            <div id="sandboxSuggestPanel" class="sandbox-suggest-panel" hidden></div>
+            <div id="beatChatComposer" class="sandbox-live-chat">
+              <input id="chatInput" type="text" maxlength="1200" placeholder="和琴音说点什么" aria-label="对偶像说" autocomplete="off">
+              <button id="sandboxSuggestBtn" class="sandbox-suggest-toggle" type="button" aria-expanded="false" aria-controls="sandboxSuggestPanel">选项</button>
+              <button id="sendChatBtn" type="button">发送</button>
+            </div>
+            <p id="chatStatus" class="sandbox-live-chat-status" role="status"></p>
+          </div>
+          <div id="chatLog" hidden></div>
+          <div class="sandbox-player-toolbar" aria-label="播放控制">
+            <button id="previousBeatBtn" type="button">上一段</button>
+            <button id="playBeatBtn" type="button" aria-pressed="false">播放</button>
+            <button id="nextBeatBtn" type="button">下一段</button>
+            <button id="stopBeatBtn" type="button">停止</button>
+            <label><input id="beatAutoPlay" type="checkbox" checked> 自动</label>
+          </div>
+        </div>
+
+        <div class="sandbox-corner-actions"><button type="button" data-panel="info" aria-label="沙盒说明">i</button><button type="button" id="sandboxSettingsBtn" data-panel="settings" aria-label="设置">≡</button></div>
+      </div>
+    </section>
+
+    <section id="sandboxProduceBoard" class="sandbox-produce-board" hidden>
+      <div class="sandbox-score-band">
+        <button id="sandboxPhoneBtn" class="sandbox-phone-btn" type="button" aria-label="打开小手机">
+          <span class="sandbox-phone-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="2"></rect><circle cx="12" cy="18" r="1"></circle></svg></span>
+        </button>
+        <div id="sandboxStatMeters" class="sandbox-stat-meters" aria-label="能力值"></div>
+        <button id="sandboxNotebookBtn" class="sandbox-notebook-btn" type="button" aria-label="打开 P 手账">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3.5h11.5a1.5 1.5 0 0 1 1.5 1.5V20H8.2A2.2 2.2 0 0 0 6 22.2V5.5A2 2 0 0 1 8 3.5z"></path><path d="M7 3.5A2 2 0 0 0 5 5.5v14"></path></svg>
+          <span>P手帳</span>
+        </button>
+      </div>
+      <p id="sandboxActionPrompt" class="sandbox-action-prompt">请选择行动</p>
+      <div id="sandboxProduceActions" class="sandbox-produce-actions"></div>
+      <p id="sandboxProduceStatus" class="sandbox-produce-status" role="status"></p>
+    </section>
+
+    <nav class="sandbox-bottom-nav" aria-label="沙盒导航">
+      <button type="button" data-panel="chat"><span>互</span><b>互动</b></button>
+      <button type="button" data-panel="actions"><span>训</span><b>上课/训练</b></button>
+      <button class="is-active" type="button" data-panel="home" aria-current="page"><span>初</span><b>主页</b></button>
+      <button type="button" data-panel="map"><span>外</span><b>外出</b></button>
+      <button type="button" data-panel="shop"><span>店</span><b>商店</b></button>
+    </nav>
+
+    <section id="sandboxPanel" class="sandbox-panel" hidden aria-live="polite">
+      <div class="sandbox-panel-heading"><div><small id="sandboxPanelEyebrow">DAILY ACTION</small><h2 id="sandboxPanelTitle">今天做什么</h2><div id="sandboxMapSwitch" class="sandbox-map-switch" hidden><button type="button" data-map-mode="city" aria-pressed="true">天川市</button><button type="button" data-map-mode="campus" aria-pressed="false">学园</button></div></div><button id="sandboxPanelClose" type="button" aria-label="关闭面板">×</button></div>
+      <p id="sandboxPanelDescription">选择一个行动，前端会先检查时长、体力和每日次数。</p>
+      <div id="sandboxQuestList" class="sandbox-quest-list" hidden></div>
+      <div id="sandboxCommissionList" class="sandbox-quest-list" hidden></div>
+      <div id="sandboxMapSurface" class="sandbox-map-surface" hidden></div>
+      <div id="sandboxMapList" class="sandbox-map-list" hidden></div>
+      <div id="sandboxJournalView" class="sandbox-journal-view" hidden>
+        <div id="sandboxJournalSummary" class="sandbox-journal-summary"></div>
+        <div id="sandboxJournalEntries" class="sandbox-journal-entries"></div>
+        <button id="sandboxSettleDayBtn" class="sandbox-settle-day-button" type="button">结束今天并进入下一天</button>
+      </div>
+      <div id="sandboxSettingsView" class="sandbox-settings" hidden>
+        <section class="sandbox-settings-section">
+          <h3>API 配置</h3>
+          <label for="sandboxApiBase">API 地址</label>
+          <input id="sandboxApiBase" type="url" placeholder="https://example.com/v1" autocomplete="off" spellcheck="false">
+          <label for="sandboxApiModel">模型</label>
+          <input id="sandboxApiModel" type="text" placeholder="模型名" autocomplete="off" spellcheck="false">
+          <label for="sandboxApiKey">密钥</label>
+          <input id="sandboxApiKey" type="password" placeholder="只保存在本机" autocomplete="off">
+        </section>
+        <section class="sandbox-settings-section">
+          <h3>语音</h3>
+          <div class="sandbox-settings-toggle">
+            <label for="sandboxTtsEnabled">启用角色语音</label>
+            <input id="sandboxTtsEnabled" type="checkbox">
+          </div>
+          <label for="sandboxTtsProxy">语音代理 URL</label>
+          <input id="sandboxTtsProxy" type="url" placeholder="https://example.com/api/fish-tts" autocomplete="off" spellcheck="false">
+          <label for="sandboxTtsModel">语音模型</label>
+          <input id="sandboxTtsModel" type="text" placeholder="s2.1-pro-free" autocomplete="off" spellcheck="false">
+          <label for="sandboxTtsKey">Fish API Key</label>
+          <input id="sandboxTtsKey" type="password" placeholder="只保存在本机" autocomplete="off">
+        </section>
+        <section class="sandbox-settings-section">
+          <h3>画面</h3>
+          <div class="sandbox-settings-toggle">
+            <label for="sandboxTaaEnabled">时间抗锯齿</label>
+            <input id="sandboxTaaEnabled" type="checkbox" checked>
+          </div>
+          <p class="sandbox-settings-note">叠几帧减轻角色锯齿。2D 背景图本身不经过这道处理。</p>
+          <div class="sandbox-settings-toggle">
+            <label for="sandboxPlateSharpen">2D 角色锐化</label>
+            <input id="sandboxPlateSharpen" type="checkbox" checked>
+          </div>
+          <p class="sandbox-settings-note">2D 背景时让角色边缘更利。关掉后更接近三维舞台的观感。</p>
+          <div class="sandbox-settings-range-row">
+            <label for="sandboxDialogueFontSize">横屏对话框字体</label>
+            <output id="sandboxDialogueFontSizeValue" for="sandboxDialogueFontSize">23px</output>
+          </div>
+          <input id="sandboxDialogueFontSize" type="range" min="14" max="30" step="1" value="23">
+          <p class="sandbox-settings-note">只影响电脑横屏布局，手机竖屏仍使用原来的字号。</p>
+        </section>
+        <section class="sandbox-settings-section">
+          <h3>存档</h3>
+          <div class="sandbox-plan-actions"><button id="sandboxSaveSettingsBtn" type="button">保存</button><button id="sandboxResetBtn" type="button">重置存档</button><button id="sandboxSettingsHomeBtn" type="button">回到首页</button></div>
+        </section>
+      </div>
+      <div id="sandboxActionList" class="sandbox-action-list">
+        <button type="button" data-action-kind="lesson"><span>上课</span><small>60 分钟 · 成长</small></button>
+        <button type="button" data-action-kind="training"><span>训练</span><small>60 分钟 · 成长</small></button>
+        <button type="button" data-action-kind="commission"><span>接委托</span><small>120 分钟 · 初星币</small></button>
+        <button type="button" data-action-kind="explore"><span>自由探索</span><small>60 分钟 · 学园地图</small></button>
+        <button type="button" data-action-kind="chat"><span>闲聊</span><small>30 分钟 · 关系</small></button>
+        <button type="button" data-action-kind="rest"><span>休息</span><small>60 分钟 · 恢复</small></button>
+      </div>
+      <div id="sandboxLongPlan" class="sandbox-long-plan">
+        <label for="sandboxCustomTimeInput">自定义时间</label>
+        <input id="sandboxCustomTimeInput" class="sandbox-pass-input" type="text" inputmode="text" placeholder="例如 09:00、第1日 22:00、倒退 8小时" autocomplete="off">
+        <div class="sandbox-plan-actions"><button id="sandboxCustomTimeBtn" type="button">设定</button></div>
+        <p id="sandboxCustomTimeStatus" class="sandbox-plan-preview"></p>
+        <label for="sandboxPlanInput">快速度过今天</label>
+        <textarea id="sandboxPlanInput" rows="2" placeholder="例如：上午上两节课，下午接委托，晚上休息"></textarea>
+        <div class="sandbox-plan-actions"><button id="sandboxPreviewPlanBtn" type="button">预览一天安排</button><button id="sandboxCommitPlanBtn" type="button" disabled>确认推进</button></div>
+        <button id="sandboxAiPlanBtn" class="sandbox-ai-plan-button" type="button">让 AI 整理这段安排</button>
+        <p id="sandboxPlanPreview" class="sandbox-plan-preview"></p>
+      </div>
+      <div id="sandboxPanelStatus" class="sandbox-panel-status"></div>
+    </section>
+    <dialog id="sandboxPresenceDialog" class="sandbox-presence-dialog" aria-labelledby="sandboxPresenceTitle">
+      <header><div><small id="sandboxPresenceTime"></small><h2 id="sandboxPresenceTitle">当前在场</h2></div><button id="sandboxPresenceClose" type="button" aria-label="关闭在场名单">×</button></header>
+      <ul id="sandboxPresenceList" class="sandbox-presence-list"></ul>
+      <p class="sandbox-presence-note">偶像会按自己的日程活动，名单随游戏时间更新。</p>
+    </dialog>
+    <div id="sandboxOrderDialog" class="sandbox-travel-dialog" hidden>
+      <div class="sandbox-travel-card" role="dialog" aria-modal="true" aria-labelledby="sandboxOrderTitle">
+        <h2 id="sandboxOrderTitle">指令</h2>
+        <p id="sandboxOrderText">可以让她跟随、留在这里，或前往别的地点。</p>
+        <div id="sandboxOrderChoices" class="sandbox-travel-choices"></div>
+        <button id="sandboxOrderBack" type="button" hidden>返回</button>
+        <button id="sandboxOrderClose" type="button">取消</button>
+      </div>
+    </div>
+    <div id="sandboxPassDialog" class="sandbox-travel-dialog" hidden>
+      <div class="sandbox-travel-card" role="dialog" aria-modal="true" aria-labelledby="sandboxPassTitle">
+        <h2 id="sandboxPassTitle">推进时间</h2>
+        <p id="sandboxPassText">在制作人的家把时间往前拨。写分钟、钟点，或明天。到 24:00 会进入第二天。</p>
+        <p id="sandboxPassNow"></p>
+        <label for="sandboxPassInput">推进多久，或推进到几点</label>
+        <input id="sandboxPassInput" class="sandbox-pass-input" type="text" inputmode="text" placeholder="例如 90、2小时、18:00" autocomplete="off">
+        <div class="sandbox-pass-quick" aria-label="快捷推进">
+          <button type="button" data-pass-minutes="15">15 分钟</button>
+          <button type="button" data-pass-minutes="30">30 分钟</button>
+          <button type="button" data-pass-minutes="60">1 小时</button>
+          <button type="button" data-pass-minutes="120">2 小时</button>
+        </div>
+        <p id="sandboxPassStatus" role="status"></p>
+        <button id="sandboxPassConfirm" type="button">推进</button>
+        <button id="sandboxPassClose" type="button">取消</button>
+      </div>
+    </div>
+    <div id="sandboxTravelDialog" class="sandbox-travel-dialog" hidden>
+      <div class="sandbox-travel-card" role="dialog" aria-modal="true" aria-labelledby="sandboxTravelTitle">
+        <h2 id="sandboxTravelTitle">学园正门</h2>
+        <p id="sandboxTravelText">要前往正门，还是从这里外出？</p>
+        <div id="sandboxTravelChoices" class="sandbox-travel-choices"></div>
+        <button id="sandboxTravelBack" type="button" hidden>返回</button>
+        <button id="sandboxTravelClose" type="button">取消</button>
+      </div>
+    </div>
+
+    <section id="sandboxPhone" class="sandbox-phone" hidden aria-label="小手机">
+      <div class="sandbox-phone-bezel" role="dialog" aria-modal="true" aria-labelledby="sandboxPhoneGreeting">
+        <div class="sandbox-phone-notch" aria-hidden="true"></div>
+        <div class="sandbox-phone-screen">
+          <div class="sandbox-phone-status is-home">
+            <span id="sandboxPhoneClock">09:00</span>
+            <span class="sandbox-phone-status-icons" aria-hidden="true"><i></i><i></i><b></b></span>
+          </div>
+          <div id="sandboxPhoneHome" class="sandbox-phone-home">
+            <p id="sandboxPhoneDate" class="sandbox-phone-date">第1日</p>
+            <p id="sandboxPhoneGreeting" class="sandbox-phone-greeting">初星通讯</p>
+            <div id="sandboxPhoneGrid" class="sandbox-phone-grid"></div>
+            <div id="sandboxPhoneDock" class="sandbox-phone-dock"></div>
+          </div>
+          <div id="sandboxPhoneLine" class="sandbox-phone-page" hidden>
+            <header class="sandbox-phone-bar">
+              <button type="button" data-phone-back>返回</button>
+              <h2 id="sandboxPhoneLineTitle">聊天</h2>
+              <button type="button" id="sandboxPhoneAdd">添加</button>
+            </header>
+            <div id="sandboxPhoneLineBody" class="sandbox-phone-body"></div>
+            <p id="sandboxPhoneLineStatus" class="sandbox-phone-status-line"></p>
+            <form id="sandboxPhoneLineForm" class="sandbox-phone-composer" hidden>
+              <input id="sandboxPhoneLineInput" maxlength="200" placeholder="发一条消息" autocomplete="off">
+              <button type="button" id="sandboxPhoneDispatch" class="sandbox-phone-dispatch">邀请到当前地点</button>
+              <button type="submit">发送</button>
+            </form>
+          </div>
+          <div id="sandboxPhoneMusic" class="sandbox-phone-page" hidden>
+            <header class="sandbox-phone-bar">
+              <button type="button" data-phone-back>返回</button>
+              <h2>音乐</h2>
+              <button type="button" data-phone-home>主屏幕</button>
+            </header>
+            <div id="sandboxPhoneMusicList" class="sandbox-phone-body"></div>
+            <div class="sandbox-phone-now">
+              <div><strong id="sandboxPhoneNowTitle">还没有播放</strong><span id="sandboxPhoneNowArtist"></span></div>
+              <button type="button" id="sandboxPhonePrev">上一首</button>
+              <button type="button" id="sandboxPhonePlay">播放</button>
+              <button type="button" id="sandboxPhoneNext">下一首</button>
+            </div>
+            <audio id="sandboxPhoneAudio" preload="none"></audio>
+          </div>
+          <div id="sandboxPhoneSimple" class="sandbox-phone-page" hidden>
+            <header class="sandbox-phone-bar">
+              <button type="button" data-phone-back>返回</button>
+              <h2 id="sandboxPhoneSimpleTitle">应用</h2>
+              <button type="button" data-phone-home>主屏幕</button>
+            </header>
+            <p id="sandboxPhoneSimpleText" class="sandbox-phone-note"></p>
+          </div>
+          <button type="button" id="sandboxPhoneClose" class="sandbox-phone-close">收起</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <textarea id="beatScript" hidden></textarea>
+  <span id="beatProgress" hidden></span><span id="beatShot" hidden></span><span id="beatStatus" hidden></span><ul id="beatDiagnostics" hidden></ul>
+  <script src="../hatsu-produce-local/fish-tts.js?v=20261027-name-dict-v1"></script>
+  <script src="../hatsu-produce-local/playlist-data.js?v=20261027-phone-v1"></script>
+      <script type="module" src="./sandbox/sandbox-home.js?v=20261102-actor-pose-v1&amp;placement=20261026-v3&amp;presence=20261026-v1"></script>
+</body>
+</html>

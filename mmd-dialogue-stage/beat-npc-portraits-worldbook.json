@@ -166,8 +166,8 @@
         "小燐"
       ],
       "keysecondary": [],
-      "comment": "贺阳燐羽 · Beat立绘表情",
-      "content": "【贺阳燐羽 · Beat 对话立绘】\n仅在该角色实际发言的 Beat 中使用。本条目按角色名字触发，表情名只对应本角色图片。\nspeaker=\"贺阳燐羽\"；cue=\"talk\"，look=\"camera\"，position=\"center\"，shot=\"medium\"，wait=\"text\"。\n该角色的小立绘贴在文本框上缘，姓名栏叠在立绘前方并遮住下缘一小部分，当前3D镜头沿用。face 按本条目选择，替代本角色的通用3D表情范围。\n可用 face：冷淡平静、自信轻笑、惊讶张口、愤怒呵斥、脸红别扭、得意坏笑、焦躁冒汗、困扰冒汗、惊愕僵住。\n省略 face 或使用 face=\"default\" 时显示“冷淡平静”。每句根据当下情绪选择，不凭空切换情绪。\n示例：<beat speaker=\"贺阳燐羽\" face=\"冷淡平静\" cue=\"talk\" look=\"camera\" position=\"center\" shot=\"medium\" wait=\"text\">这里填写该角色的台词。</beat>\n正文继续遵守当前任务的 Beat、中文显示与语音规则；工作回执里的 Beat 仍放在 story 或 reunionStory 字符串内。",
+      "comment": "3D 偶像 · Beat",
+      "content": "【3D 偶像 · Beat】\n已有 3D 模型的角色按普通偶像 Beat 输出，不使用小立绘，也不使用立绘表情名。\n贺阳燐羽、燐羽、小燐使用 3D 模型。speaker 写 krnh 或 贺阳燐羽。\ncue、face、overlay、look、position、shot、camera、wait 与其他 3D 偶像相同。\nface 只用 neutral、happy、very-happy、shy、surprised、sad、angry、speechless、unequal-eyes。成套动作不要再填 face。\n不要写冷淡平静、自信轻笑、惊讶张口、愤怒呵斥、脸红别扭、得意坏笑、焦躁冒汗、困扰冒汗、惊愕僵住。\n示例：<beat speaker=\"krnh\" cue=\"talk\" look=\"camera\" position=\"center\" shot=\"medium\" wait=\"text\">这里填写台词。</beat>\n正文继续遵守当前任务的 Beat、中文显示与语音规则；工作回执里的 Beat 仍放在 story 或 reunionStory 字符串内。",
       "constant": false,
       "vectorized": false,
       "selective": false,

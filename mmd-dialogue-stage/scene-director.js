@@ -1,5 +1,5 @@
-import { stageSnapshot, sceneIdolId, SCENE_IDOLS } from './scene-protocol.js?v=20261006-star-eyes-v1';
-import { StageAttentionController } from './stage-attention.js?v=20260914-stage-attention-v1';
+import { stageSnapshot, sceneIdolId, SCENE_IDOLS } from './scene-protocol.js?v=20261102-krnh-3d-v1';
+import { StageAttentionController } from './stage-attention.js?v=20261030-perf-diagnostic-v2';
 import { stagePositionOffset } from './beat-player-core.js?v=20261011-action-rules-v3';
 import { costumeEntryKey, resolveBeatCostume } from './beat-costumes.js?v=20261013-all-idol-solo1-v1';
 
@@ -15,6 +15,38 @@ export class SceneDirector {
 
     allEntries() {
         return [...new Set([...this.entries.values(), ...this.costumeEntries.values()])];
+    }
+
+    getPerformanceSnapshot() {
+        const actors = this.allEntries().map(entry => entry.player?.getPerformanceSnapshot?.({
+            idolId: entry.canvas?.dataset?.idol || '',
+            costume: entry.canvas?.dataset?.costume || '',
+            present: entry.present === true && entry.canvas?.style?.visibility !== 'hidden',
+        })).filter(Boolean);
+        const active = actors.filter(actor => actor.present && actor.ready);
+        return {
+            loadedActors: actors.filter(actor => actor.ready).length,
+            activeActors: active.length,
+            actors,
+            aggregate: {
+                drawCalls: active.reduce((total, actor) => total + (Number(actor.renderer?.calls) || 0), 0),
+                triangles: active.reduce((total, actor) => total + (Number(actor.renderer?.triangles) || 0), 0),
+                updateMs: active.reduce((total, actor) => total + (Number(actor.frame?.updateMs) || 0), 0),
+                renderMs: active.reduce((total, actor) => total + (Number(actor.frame?.renderMs) || 0), 0),
+                pixelRatio: active.reduce((total, actor) => total + (Number(actor.renderer?.pixelRatio) || 0), 0),
+                geometries: active.reduce((total, actor) => total + (Number(actor.renderer?.geometries) || 0), 0),
+                textures: active.reduce((total, actor) => total + (Number(actor.renderer?.textures) || 0), 0),
+                phases: active.reduce((totals, actor) => {
+                    for (const [name, value] of Object.entries(actor.frame?.phases || {})) {
+                        totals[name] = (Number(totals[name]) || 0) + (Number(value) || 0);
+                    }
+                    return totals;
+                }, {}),
+                fixedSteps: active.reduce((total, actor) => total + (Number(actor.physics?.fixedSteps) || 0), 0),
+                staticCollisionHits: active.reduce((total, actor) => total + (Number(actor.physics?.staticCollisionHits) || 0), 0),
+                chainCollisionHits: active.reduce((total, actor) => total + (Number(actor.physics?.chainCollisionHits) || 0), 0),
+            },
+        };
     }
 
     activateCostumes(costumes = {}) {
@@ -237,3 +269,4 @@ export class SceneDirector {
         this.costumeEntries.clear();
     }
 }
+
