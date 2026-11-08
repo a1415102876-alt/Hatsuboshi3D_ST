@@ -1,8 +1,8 @@
-import { formatActorMove, formatActorPose, formatCameraMove, formatCameraPose, parseActorMove, parseActorPose, parseBeatScript, parseCameraMove, parseCameraPose } from './beat-protocol.js?v=20261103-pose-move-v2';
+import { formatActorMove, formatActorPose, formatCameraMove, formatCameraPose, formatDepthOfField, formatFocalLength, parseActorMove, parseActorPose, parseBeatScript, parseCameraMove, parseCameraPose, parseCameraWalk, parseDepthOfField, parseFocalLength } from './beat-protocol.js?v=20261104-clock-transition-v1';
 
 const STANDARD_ATTRIBUTES = Object.freeze(new Set([
   'id', 'speaker', 'cue', 'face', 'overlay', 'effect', 'look', 'position',
-  'background', 'shot', 'wait', 'camera', 'camera-pose', 'camera-move', 'actor-pose', 'actor-move', 'camera-motion', 'camera-ease',
+  'background', 'shot', 'wait', 'transition', 'camera', 'focal', 'dof', 'camera-pose', 'camera-move', 'camera-walk', 'actor-pose', 'actor-move', 'camera-motion', 'camera-ease',
   'camera-duration', 'costume',
 ]));
 
@@ -18,7 +18,10 @@ const FIELD_TO_ATTRIBUTE = Object.freeze({
   background: 'background',
   shot: 'shot',
   wait: 'wait',
+  transition: 'transition',
   camera: 'camera',
+  focal: 'focal',
+  dof: 'dof',
   cameraPose: 'camera-pose',
   cameraMove: 'camera-move',
   actorPose: 'actor-pose',
@@ -109,6 +112,19 @@ function cloneValue(value) {
   return value;
 }
 
+function readCameraMove(source) {
+  const hasObject = Object.hasOwn(source, 'cameraMove');
+  const move = hasObject
+    ? parseCameraMove(source.cameraMove)
+    : parseCameraMove(source.rawAttributes?.['camera-move']);
+  if (!move) return null;
+  const walk = hasObject
+    ? source.cameraMove?.walk === true
+    : parseCameraWalk(source.rawAttributes?.['camera-walk']) === true;
+  if (walk) move.walk = true;
+  return move;
+}
+
 function sanitizeBeat(beat, index = 0) {
   const source = beat && typeof beat === 'object' ? beat : {};
   const result = {
@@ -123,13 +139,14 @@ function sanitizeBeat(beat, index = 0) {
     background: trimText(source.background),
     shot: trimText(source.shot) || 'medium',
     wait: trimText(source.wait) || 'text',
+    transition: trimText(source.transition) === 'clock' ? 'clock' : '',
     camera: trimText(source.camera),
+    focal: Object.hasOwn(source, 'focal') ? parseFocalLength(source.focal) : parseFocalLength(source.rawAttributes?.focal),
+    dof: Object.hasOwn(source, 'dof') ? parseDepthOfField(source.dof) : parseDepthOfField(source.rawAttributes?.dof),
     cameraPose: Object.hasOwn(source, 'cameraPose')
       ? parseCameraPose(source.cameraPose)
       : parseCameraPose(source.rawAttributes?.['camera-pose']),
-    cameraMove: Object.hasOwn(source, 'cameraMove')
-      ? parseCameraMove(source.cameraMove)
-      : parseCameraMove(source.rawAttributes?.['camera-move']),
+    cameraMove: readCameraMove(source),
     actorPose: Object.hasOwn(source, 'actorPose')
       ? parseActorPose(source.actorPose)
       : parseActorPose(source.rawAttributes?.['actor-pose']),
@@ -183,6 +200,14 @@ function rawAttributePatch(normalized, rawAttributes) {
     } else if (field === 'cameraDuration') {
       if (Number(normalized[field]) > 0) result[attribute] = String(normalized[field]);
       else delete result[attribute];
+    } else if (field === 'focal') {
+      const formatted = formatFocalLength(normalized.focal);
+      if (formatted) result[attribute] = formatted;
+      else delete result[attribute];
+    } else if (field === 'dof') {
+      const formatted = formatDepthOfField(normalized.dof);
+      if (formatted) result[attribute] = formatted;
+      else delete result[attribute];
     } else if (field === 'cameraPose') {
       const formatted = formatCameraPose(normalized.cameraPose);
       if (formatted) result[attribute] = formatted;
@@ -195,6 +220,8 @@ function rawAttributePatch(normalized, rawAttributes) {
       const formatted = formatCameraMove(normalized.cameraMove);
       if (formatted) result[attribute] = formatted;
       else delete result[attribute];
+      if (formatted && normalized.cameraMove?.walk) result['camera-walk'] = '1';
+      else delete result['camera-walk'];
     } else if (field === 'actorMove') {
       const formatted = formatActorMove(normalized.actorMove);
       if (formatted) result[attribute] = formatted;
@@ -214,7 +241,7 @@ function attributesText(beat, index) {
   values.id = trimText(beat.id) || makeId(index);
   values.speaker = trimText(beat.speaker);
   values.cue = trimText(beat.cue) || 'talk';
-  const preferredOrder = ['id', 'speaker', 'cue', 'face', 'overlay', 'effect', 'look', 'position', 'actor-pose', 'actor-move', 'background', 'shot', 'wait', 'camera', 'camera-pose', 'camera-move', 'camera-motion', 'camera-ease', 'camera-duration', 'costume'];
+  const preferredOrder = ['id', 'speaker', 'cue', 'face', 'overlay', 'effect', 'look', 'position', 'actor-pose', 'actor-move', 'background', 'shot', 'wait', 'transition', 'camera', 'focal', 'dof', 'camera-pose', 'camera-move', 'camera-walk', 'camera-motion', 'camera-ease', 'camera-duration', 'costume'];
   const keys = [...new Set([...preferredOrder, ...Object.keys(values)])].filter(key => values[key] != null && values[key] !== '');
   return keys.map(key => `${key}="${escapeAttribute(values[key])}"`).join(' ');
 }

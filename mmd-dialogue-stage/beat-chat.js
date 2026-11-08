@@ -2,6 +2,20 @@ import { parseBeatScript } from './beat-protocol.js?v=20261026-cue-words-v1';
 import { activateTavernWorldbook, importTavernWorldbook } from './worldbook-scan.js';
 
 const DEFAULT_BACKGROUND = '家·教室（午）';
+const PLAYER_CHAT_NIGHT = '家·教室（夜）';
+
+/** Player chat uses the noon classroom until 19:00, then the night variant through 04:59. */
+export function playerChatScene(date = new Date()) {
+    const hour = date.getHours();
+    const night = hour >= 19 || hour < 5;
+    const pad = value => String(value).padStart(2, '0');
+    const clock = `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日 ${pad(hour)}:${pad(date.getMinutes())}`;
+    return {
+        night,
+        background: night ? PLAYER_CHAT_NIGHT : DEFAULT_BACKGROUND,
+        context: `用户现在的本地时间是${clock}。${night ? '已经过了晚上7点，教室是夜晚。' : '现在还没到晚上7点，教室是白天。'}回复时要知道这个时间，可以自然提到此刻的光线和作息。不要因此改课程、训练或演出日程。`,
+    };
+}
 const DEFAULT_TIMEOUT = 120000;
 const BUILTIN_SPEAKERS = new Set(['producer', '制作人', 'narrator', '旁白']);
 
@@ -586,6 +600,8 @@ export function createLocalChatBridge({ fetchImpl = globalThis.fetch, getSetting
             useWorldbook = true,
             useHistory = true,
             systemPrompt: systemPromptOverride,
+            characterName,
+            worldbookEntries: worldbookOverride,
             signal: externalSignal,
         } = {}) {
             if (disposed) throw new Error('闲聊桥已关闭');
@@ -595,7 +611,10 @@ export function createLocalChatBridge({ fetchImpl = globalThis.fetch, getSetting
             const url = chatCompletionsUrl(settings.baseUrl);
             const model = String(settings.model || '').trim();
             if (!url || !model) throw new Error('请先填写 API 地址和模型');
-            const idol = extractChatIdolName(text) || String(settings.idolName || '').trim();
+            const idol = characterName == null
+                ? (extractChatIdolName(text) || String(settings.idolName || '').trim())
+                : String(characterName).trim();
+            const bookSettings = worldbookOverride == null ? settings : { ...settings, worldbookEntries: worldbookOverride };
             const playerLine = extractChatPlayerLine(text);
             const active = dayOf();
             const history = useHistory ? turnsFor(idol).filter(turn => !active || Number(turn.day) === active) : [];
@@ -605,7 +624,7 @@ export function createLocalChatBridge({ fetchImpl = globalThis.fetch, getSetting
                     Object.prototype.hasOwnProperty.call(arguments[1] || {}, 'systemPrompt') ? systemPromptOverride : settings.systemPrompt,
                     { idol, core: settings.idolCore },
                 ),
-                worldEntries: useWorldbook ? chatWorldbookEntries(settings, scanMessages, idol) : [],
+                worldEntries: useWorldbook ? chatWorldbookEntries(bookSettings, scanMessages, idol) : [],
                 history: history.map(turn => ({ role: turn.role, content: turn.content })),
                 userPrompt: text,
             });

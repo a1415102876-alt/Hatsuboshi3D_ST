@@ -47,6 +47,42 @@ void main() {
 }
 `;
 
+const DOF_FRAGMENT = `
+uniform sampler2D gkSource;
+uniform sampler2D gkDepth;
+uniform vec2 gkTexel;
+uniform float gkNear;
+uniform float gkFar;
+uniform float gkFocus;
+uniform float gkRadius;
+varying vec2 vUv;
+float viewDistance(float depth) {
+    float viewZ = (gkNear * gkFar) / ((gkFar - gkNear) * depth - gkFar);
+    return -viewZ;
+}
+void main() {
+    vec4 center = texture2D(gkSource, vUv);
+    float dist = viewDistance(texture2D(gkDepth, vUv).r);
+    float coc = clamp(abs(dist - gkFocus) / max(gkFocus * 0.35, 0.2), 0.0, 1.0);
+    vec2 radius = gkTexel * (coc * gkRadius);
+    vec3 color = center.rgb;
+    color += texture2D(gkSource, vUv + radius * vec2(1.0, 0.0)).rgb;
+    color += texture2D(gkSource, vUv + radius * vec2(-1.0, 0.0)).rgb;
+    color += texture2D(gkSource, vUv + radius * vec2(0.0, 1.0)).rgb;
+    color += texture2D(gkSource, vUv + radius * vec2(0.0, -1.0)).rgb;
+    color += texture2D(gkSource, vUv + radius * vec2(0.707, 0.707)).rgb;
+    color += texture2D(gkSource, vUv + radius * vec2(-0.707, 0.707)).rgb;
+    color += texture2D(gkSource, vUv + radius * vec2(0.707, -0.707)).rgb;
+    color += texture2D(gkSource, vUv + radius * vec2(-0.707, -0.707)).rgb;
+    vec2 farRadius = radius * 1.8;
+    color += texture2D(gkSource, vUv + farRadius * vec2(1.0, 0.0)).rgb;
+    color += texture2D(gkSource, vUv + farRadius * vec2(-1.0, 0.0)).rgb;
+    color += texture2D(gkSource, vUv + farRadius * vec2(0.0, 1.0)).rgb;
+    color += texture2D(gkSource, vUv + farRadius * vec2(0.0, -1.0)).rgb;
+    gl_FragColor = vec4(color / 13.0, center.a);
+}
+`;
+
 const TAA_FRAGMENT = `
 uniform sampler2D gkCurrent;
 uniform sampler2D gkHistory;
@@ -206,6 +242,115 @@ void main() {
 }
 `;
 
+const AO_FRAGMENT = `
+uniform sampler2D gkDepth;
+uniform vec2 gkTexel;
+uniform vec2 gkCamera;
+varying vec2 vUv;
+float gkViewDistance(float depth) {
+    float viewZ = (gkCamera.x * gkCamera.y) / ((gkCamera.y - gkCamera.x) * depth - gkCamera.y);
+    return -viewZ;
+}
+float gkOccAt(vec2 uv, float center) {
+    float delta = center - gkViewDistance(texture2D(gkDepth, uv).r);
+    float weight = clamp(delta / 0.12, 0.0, 1.0);
+    return weight * (1.0 - smoothstep(0.22, 0.7, delta));
+}
+void main() {
+    float depth = texture2D(gkDepth, vUv).r;
+    float occ = 0.0;
+    if (depth < 0.999) {
+        float center = gkViewDistance(depth);
+        vec2 radius = gkTexel * 14.0;
+        occ += gkOccAt(vUv + radius * vec2(1.0, 0.2), center);
+        occ += gkOccAt(vUv + radius * vec2(-0.8, 0.6), center);
+        occ += gkOccAt(vUv + radius * vec2(0.2, -1.0), center);
+        occ += gkOccAt(vUv + radius * vec2(-0.4, -0.7), center);
+        occ += gkOccAt(vUv + radius * vec2(0.9, 0.8), center);
+        occ += gkOccAt(vUv + radius * vec2(-1.0, -0.3), center);
+        occ += gkOccAt(vUv + radius * vec2(0.5, 0.9), center);
+        occ += gkOccAt(vUv + radius * vec2(-0.6, 0.4), center);
+        occ *= 0.125;
+    }
+    gl_FragColor = vec4(occ, 0.0, 0.0, 1.0);
+}
+`;
+
+const SPACE_FRAGMENT = `
+uniform sampler2D gkSource;
+uniform sampler2D gkDepth;
+uniform sampler2D gkAo;
+uniform sampler2D gkVelocity;
+uniform vec2 gkTexel;
+uniform vec2 gkCamera;
+uniform mat4 gkProj;
+uniform mat4 gkInvProj;
+uniform vec3 gkContactView;
+uniform vec3 gkViewUp;
+uniform float gkHasVelocity;
+varying vec2 vUv;
+vec3 gkViewAt(vec2 uv) {
+    float depth = texture2D(gkDepth, uv).r;
+    vec4 clip = vec4(uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+    vec4 view = gkInvProj * clip;
+    return view.xyz / max(view.w, 1e-4);
+}
+vec3 gkViewNormal(vec2 uv) {
+    vec3 position = gkViewAt(uv);
+    vec3 dx = gkViewAt(uv + vec2(gkTexel.x, 0.0)) - position;
+    vec3 dy = gkViewAt(uv + vec2(0.0, gkTexel.y)) - position;
+    if (length(dx) > 0.35 || length(dy) > 0.35) return vec3(0.0);
+    vec3 normal = normalize(cross(dx, dy));
+    if (normal.z < 0.0) normal = -normal;
+    return normal;
+}
+void main() {
+    vec2 velocity = gkHasVelocity > 0.5 ? texture2D(gkVelocity, vUv).xy : vec2(0.0);
+    velocity = clamp(velocity, vec2(-0.04), vec2(0.04)) * 0.35;
+    vec3 color = texture2D(gkSource, vUv).rgb * 0.4;
+    color += texture2D(gkSource, clamp(vUv + velocity * 0.35, 0.0, 1.0)).rgb * 0.2;
+    color += texture2D(gkSource, clamp(vUv - velocity * 0.35, 0.0, 1.0)).rgb * 0.2;
+    color += texture2D(gkSource, clamp(vUv + velocity, 0.0, 1.0)).rgb * 0.1;
+    color += texture2D(gkSource, clamp(vUv - velocity, 0.0, 1.0)).rgb * 0.1;
+    vec3 position = gkViewAt(vUv);
+    float depth = texture2D(gkDepth, vUv).r;
+    if (depth < 0.999) {
+        vec3 normal = gkViewNormal(vUv);
+        if (dot(normal, normal) > 0.5) {
+            // World up, not screen up. A chest or shoulder can point up on
+            // screen while still facing the camera, and that must stay matte.
+            float up = dot(normal, gkViewUp);
+            float floorWeight = smoothstep(0.88, 0.97, up);
+            vec2 reach = gkTexel * 10.0;
+            float agree = step(0.88, dot(gkViewNormal(vUv + vec2(reach.x, 0.0)), gkViewUp));
+            agree += step(0.88, dot(gkViewNormal(vUv - vec2(reach.x, 0.0)), gkViewUp));
+            agree += step(0.88, dot(gkViewNormal(vUv + vec2(0.0, reach.y)), gkViewUp));
+            agree += step(0.88, dot(gkViewNormal(vUv - vec2(0.0, reach.y)), gkViewUp));
+            floorWeight *= smoothstep(2.5, 3.5, agree);
+            vec3 reflected = reflect(normalize(position), normal);
+            vec3 reflection = vec3(0.0);
+            float reflectedWeight = 0.0;
+            for (int gkReflectStep = 1; gkReflectStep <= 8; gkReflectStep++) {
+                vec3 samplePos = position + reflected * (float(gkReflectStep) * 0.18);
+                vec4 clip = gkProj * vec4(samplePos, 1.0);
+                if (clip.w < 1e-4) break;
+                vec2 sampleUv = clip.xy / clip.w * 0.5 + 0.5;
+                if (sampleUv.x < 0.0 || sampleUv.y < 0.0 || sampleUv.x > 1.0 || sampleUv.y > 1.0) break;
+                vec3 scenePos = gkViewAt(sampleUv);
+                float gap = length(samplePos) - length(scenePos);
+                if (gap > 0.03 && gap < 0.45) {
+                    reflection = texture2D(gkSource, sampleUv).rgb;
+                    reflectedWeight = floorWeight;
+                    break;
+                }
+            }
+            color += reflection * reflectedWeight * 0.22;
+        }
+    }
+    gl_FragColor = vec4(max(color, vec3(0.0)), texture2D(gkSource, vUv).a);
+}
+`;
+
 const COPY_FRAGMENT = `
 uniform sampler2D gkSource;
 varying vec2 vUv;
@@ -234,6 +379,7 @@ uniform float gkFlareScale;
 uniform vec3 gkVignetteColor;
 uniform vec4 gkVignette;
 uniform float gkVignetteWeight;
+uniform float gkStarWeight;
 varying vec2 vUv;
 
 vec3 gkFlare(vec2 uv, vec4 flare, vec3 inner, vec3 outer) {
@@ -254,7 +400,19 @@ void main() {
     float contrast = abs(dot(color - soft, vec3(0.2126, 0.7152, 0.0722)));
     float response = pow(clamp(contrast / max(gkDiffusionThreshold, 1e-4), 0.0, 1.0), max(gkDiffusionPower, 1e-3));
     color = mix(color, soft, gkDiffusionBlend * (1.0 - response));
-    color += texture2D(gkBloomMap, vUv).rgb * gkBloomIntensity;
+    vec3 bloom = texture2D(gkBloomMap, vUv).rgb;
+    color += bloom * gkBloomIntensity;
+    if (gkStarWeight > 0.0) {
+        vec2 streak = vec2(0.02, 0.004);
+        vec2 cross = vec2(-streak.y, streak.x);
+        vec3 star = texture2D(gkBloomMap, clamp(vUv + streak, 0.0, 1.0)).rgb;
+        star += texture2D(gkBloomMap, clamp(vUv - streak, 0.0, 1.0)).rgb;
+        star += texture2D(gkBloomMap, clamp(vUv + streak * 2.2, 0.0, 1.0)).rgb;
+        star += texture2D(gkBloomMap, clamp(vUv - streak * 2.2, 0.0, 1.0)).rgb;
+        star += texture2D(gkBloomMap, clamp(vUv + cross * 1.6, 0.0, 1.0)).rgb;
+        star += texture2D(gkBloomMap, clamp(vUv - cross * 1.6, 0.0, 1.0)).rgb;
+        color += star * gkStarWeight * gkBloomIntensity;
+    }
     if (gkFlareWeight > 0.0) {
         color += gkFlareScale * gkFlare(vUv, gkFlare0, gkFlare0A, gkFlare0B);
         color += gkFlareScale * gkFlare(vUv, gkFlare1, gkFlare1A, gkFlare1B);
@@ -265,6 +423,22 @@ void main() {
     gl_FragColor = linearToOutputTexel(vec4(max(color, vec3(0.0)), 1.0));
 }
 `;
+
+// The game writes HDR color (its character shader clamps at 1000, not 1), and
+// every later pass reads it back unclamped. These targets used to be 8-bit, so
+// highlights clipped before bloom, and the TAA history kept linear values in an
+// 8-bit buffer where darks have coarse steps. Half float fixes both. It needs
+// float render targets, which WebGL2 exposes through one of two extensions.
+//   ?hdr=off  or  globalThis.__HATSU_HDR_POST = false   keeps the 8-bit chain.
+export function hdrPostSupported(renderer, env = globalThis) {
+    if (env?.__HATSU_HDR_POST === false) return false;
+    try {
+        if (new URLSearchParams(env?.location?.search || '').get('hdr') === 'off') return false;
+    } catch { /* no location: use the capability test alone */ }
+    const extensions = renderer?.extensions;
+    if (!renderer?.capabilities?.isWebGL2 || typeof extensions?.has !== 'function') return false;
+    return extensions.has('EXT_color_buffer_float') || extensions.has('EXT_color_buffer_half_float');
+}
 
 function makeTarget(width, height, { depth = false, stencil = depth, samples = 0, type = THREE.UnsignedByteType, nearest = false } = {}) {
     const filter = nearest ? THREE.NearestFilter : THREE.LinearFilter;
@@ -297,13 +471,61 @@ function shader(fragment, uniforms) {
     });
 }
 
+const FXAA_FRAGMENT = `
+uniform sampler2D gkSource;
+uniform vec2 gkTexel;
+varying vec2 vUv;
+const vec3 GK_LUMA = vec3(0.299, 0.587, 0.114);
+void main() {
+    vec4 center = texture2D(gkSource, vUv);
+    vec3 rgbM = center.rgb;
+    vec3 rgbNW = texture2D(gkSource, vUv + vec2(-1.0, -1.0) * gkTexel).rgb;
+    vec3 rgbNE = texture2D(gkSource, vUv + vec2(1.0, -1.0) * gkTexel).rgb;
+    vec3 rgbSW = texture2D(gkSource, vUv + vec2(-1.0, 1.0) * gkTexel).rgb;
+    vec3 rgbSE = texture2D(gkSource, vUv + vec2(1.0, 1.0) * gkTexel).rgb;
+    float lumaM = dot(rgbM, GK_LUMA);
+    float lumaNW = dot(rgbNW, GK_LUMA);
+    float lumaNE = dot(rgbNE, GK_LUMA);
+    float lumaSW = dot(rgbSW, GK_LUMA);
+    float lumaSE = dot(rgbSE, GK_LUMA);
+    float lumaMin = min(lumaM, min(min(lumaNW, lumaNE), min(lumaSW, lumaSE)));
+    float lumaMax = max(lumaM, max(max(lumaNW, lumaNE), max(lumaSW, lumaSE)));
+    if (lumaMax - lumaMin < max(0.0833, lumaMax * 0.125)) {
+        gl_FragColor = center;
+        return;
+    }
+    vec2 dir = vec2(-((lumaNW + lumaNE) - (lumaSW + lumaSE)), (lumaNW + lumaSW) - (lumaNE + lumaSE));
+    float dirReduce = max((lumaNW + lumaNE + lumaSW + lumaSE) * 0.0625, 0.0078125);
+    float rcpDirMin = 1.0 / (min(abs(dir.x), abs(dir.y)) + dirReduce);
+    dir = clamp(dir * rcpDirMin, vec2(-8.0), vec2(8.0)) * gkTexel;
+    vec3 rgbA = 0.5 * (
+        texture2D(gkSource, vUv + dir * (0.333333 - 0.5)).rgb +
+        texture2D(gkSource, vUv + dir * (0.666667 - 0.5)).rgb
+    );
+    vec3 rgbB = rgbA * 0.5 + 0.25 * (
+        texture2D(gkSource, vUv + dir * -0.5).rgb +
+        texture2D(gkSource, vUv + dir * 0.5).rgb
+    );
+    float lumaB = dot(rgbB, GK_LUMA);
+    gl_FragColor = vec4(lumaB < lumaMin || lumaB > lumaMax ? rgbA : rgbB, center.a);
+}
+`;
+
 const MODULES = ['bloom', 'diffusion', 'paraffin', 'chromatic', 'vignette'];
+
+// Motion blur is a picture preference, not a scene-volume module. Scene apply()
+// must not clear it when it reloads bloom and diffusion.
+let captureMotionBlur = false;
+
+export function setCaptureMotionBlur(enabled) {
+    captureMotionBlur = enabled === true;
+}
 
 export class GakumasPostPass {
     constructor(renderer, { keepAlpha = false, renderScale = 1.35, renderPixelBudget = 2500000 } = {}) {
         this.renderer = renderer;
         this.enabled = false;
-        this.modules = { bloom: false, diffusion: false, paraffin: false, chromatic: false, vignette: false, taa: false };
+        this.modules = { bloom: false, diffusion: false, paraffin: false, chromatic: false, vignette: false, taa: false, fxaa: false };
         // The game resolves TAA from a higher-resolution render target than a
         // low-DPI browser canvas. Keep a modest supersample on DPR 1 screens,
         // but cap the target by a pixel budget so a full-size desktop view does
@@ -334,24 +556,44 @@ export class GakumasPostPass {
         // drawn here. A multisample resolve allocates the paired depth buffer
         // as unsized DEPTH_STENCIL, which this WebGL path rejects.
         this.samples = 0;
-        this.color = makeTarget(1, 1, { depth: true });
-        if ('colorSpace' in this.color.texture && THREE.SRGBColorSpace) this.color.texture.colorSpace = THREE.SRGBColorSpace;
+        this.hdr = hdrPostSupported(renderer);
+        const colorType = this.hdr ? THREE.HalfFloatType : THREE.UnsignedByteType;
+        this.color = makeTarget(1, 1, { depth: true, type: colorType });
+        // Three writes linear values into any render target. 8-bit stores them in
+        // an sRGB buffer to keep dark steps fine; half float is linear already.
+        if ('colorSpace' in this.color.texture) {
+            this.color.texture.colorSpace = this.hdr ? THREE.LinearSRGBColorSpace : THREE.SRGBColorSpace;
+        }
         this.msaa = null;
         this.depth = new THREE.DepthTexture(1, 1, THREE.UnsignedInt248Type);
         this.depth.format = THREE.DepthStencilFormat;
         this.depth.magFilter = THREE.NearestFilter;
         this.depth.minFilter = THREE.NearestFilter;
         this.color.depthTexture = this.depth;
-        this.history = [makeTarget(1, 1), makeTarget(1, 1)];
+        this.history = [makeTarget(1, 1, { type: colorType }), makeTarget(1, 1, { type: colorType })];
         this.velocity = createVelocityMaterial();
         this.velocityTarget = makeTarget(1, 1, { type: THREE.HalfFloatType, nearest: true });
         if ('colorSpace' in this.velocityTarget.texture && THREE.NoColorSpace) {
             this.velocityTarget.texture.colorSpace = THREE.NoColorSpace;
         }
-        this.bloomA = makeTarget(1, 1);
-        this.bloomB = makeTarget(1, 1);
-        this.softA = makeTarget(1, 1);
-        this.softB = makeTarget(1, 1);
+        // Bloom, diffusion, depth of field and the capture-space pass all carry
+        // scene color, so they follow it. spaceA/B hold ambient occlusion only.
+        this.bloomA = makeTarget(1, 1, { type: colorType });
+        this.bloomB = makeTarget(1, 1, { type: colorType });
+        this.softA = makeTarget(1, 1, { type: colorType });
+        this.softB = makeTarget(1, 1, { type: colorType });
+        this.dofTarget = makeTarget(1, 1, { type: colorType });
+        this.spaceA = makeTarget(1, 1);
+        this.spaceB = makeTarget(1, 1);
+        this.spaceFull = makeTarget(1, 1, { type: colorType });
+        if ('colorSpace' in this.spaceA.texture && THREE.NoColorSpace) {
+            this.spaceA.texture.colorSpace = THREE.NoColorSpace;
+            this.spaceB.texture.colorSpace = THREE.NoColorSpace;
+        }
+        this.contactWorld = new THREE.Vector3(0.25, 0.9, 0.3).normalize();
+        this.contactView = new THREE.Vector3();
+        this.viewUp = new THREE.Vector3(0, 1, 0);
+        this.depthOfField = null;
         this.scene = new THREE.Scene();
         this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
         this.copyMaterial = shader(COPY_FRAGMENT, {
@@ -365,6 +607,19 @@ export class GakumasPostPass {
         this.blurMaterial = shader(BLUR_FRAGMENT, {
             gkSource: { value: null },
             gkBlurTexel: { value: new THREE.Vector2() },
+        });
+        this.fxaaMaterial = shader(FXAA_FRAGMENT, {
+            gkSource: { value: this.color.texture },
+            gkTexel: { value: new THREE.Vector2() },
+        });
+        this.dofMaterial = shader(DOF_FRAGMENT, {
+            gkSource: { value: null },
+            gkDepth: { value: this.depth },
+            gkTexel: { value: new THREE.Vector2() },
+            gkNear: { value: 0.1 },
+            gkFar: { value: 1000 },
+            gkFocus: { value: 1 },
+            gkRadius: { value: 0 },
         });
         this.taaMaterial = shader(TAA_FRAGMENT, {
             gkCurrent: { value: this.color.texture },
@@ -407,6 +662,25 @@ export class GakumasPostPass {
             gkVignetteColor: { value: new THREE.Color() },
             gkVignette: { value: new THREE.Vector4(0.5, 0.5, 0, 0.2) },
             gkVignetteWeight: { value: 0 },
+            gkStarWeight: { value: 0 },
+        });
+        this.aoMaterial = shader(AO_FRAGMENT, {
+            gkDepth: { value: this.depth },
+            gkTexel: { value: new THREE.Vector2() },
+            gkCamera: { value: new THREE.Vector2(0.1, 1000) },
+        });
+        this.spaceMaterial = shader(SPACE_FRAGMENT, {
+            gkSource: { value: this.color.texture },
+            gkDepth: { value: this.depth },
+            gkAo: { value: this.spaceB.texture },
+            gkVelocity: { value: this.velocityTarget.texture },
+            gkTexel: { value: new THREE.Vector2() },
+            gkCamera: { value: new THREE.Vector2(0.1, 1000) },
+            gkProj: { value: new THREE.Matrix4() },
+            gkInvProj: { value: new THREE.Matrix4() },
+            gkContactView: { value: new THREE.Vector3(0, 1, 0) },
+            gkViewUp: { value: new THREE.Vector3(0, 1, 0) },
+            gkHasVelocity: { value: 0 },
         });
         this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.compositeMaterial);
         this.mesh.frustumCulled = false;
@@ -431,6 +705,28 @@ export class GakumasPostPass {
         this.sync();
     }
 
+    setQuality(quality = {}) {
+        const taa = !!quality.taa;
+        const fxaa = !!quality.fxaa && !taa;
+        const renderScale = Math.max(1, Math.min(Number(quality.renderScale) || 1, 1.6));
+        const renderPixelBudget = Math.max(1, Number(quality.renderPixelBudget) || this.renderPixelBudget);
+        const same = this.modules.taa === taa
+            && this.modules.fxaa === fxaa
+            && this.renderScale === renderScale
+            && this.renderPixelBudget === renderPixelBudget;
+        if (same) return;
+        const scaleChanged = this.renderScale !== renderScale || this.renderPixelBudget !== renderPixelBudget;
+        this.renderScale = renderScale;
+        this.renderPixelBudget = renderPixelBudget;
+        this.modules.fxaa = fxaa;
+        if (this.modules.taa !== taa) {
+            this.modules.taa = taa;
+            this.resetHistory = true;
+        }
+        this.taaTouched = true;
+        if (scaleChanged) this.color.setSize(1, 1);
+    }
+
     setModule(name, enabled) {
         if (name === 'taa') {
             this.modules.taa = !!enabled;
@@ -441,6 +737,19 @@ export class GakumasPostPass {
         if (!MODULES.includes(name)) return;
         this.modules[name] = !!enabled;
         this.sync();
+    }
+
+    setDepthOfField(dof) {
+        const aperture = Number(dof?.aperture);
+        const focus = Number(dof?.focus);
+        if (!(aperture > 0) || !(focus > 0)) {
+            this.depthOfField = null;
+            return;
+        }
+        this.depthOfField = {
+            aperture: Math.min(22, Math.max(1.2, aperture)),
+            focus,
+        };
     }
 
     setMotionHint(value, { reset = false } = {}) {
@@ -459,6 +768,7 @@ export class GakumasPostPass {
         extract.gkThreshold.value = Number.isFinite(bloom.threshold) ? bloom.threshold : 1;
         extract.gkBloomColor.value.setRGB(...(bloom.color || [1, 1, 1]));
         uniforms.gkBloomIntensity.value = this.modules.bloom ? (bloom.intensity || 0) * BLOOM_DISPLAY_SCALE : 0;
+        uniforms.gkStarWeight.value = this.modules.bloom ? 0.09 : 0;
         uniforms.gkDiffusionBlend.value = this.modules.diffusion ? (diffusion.blend || 0) * DIFFUSION_DISPLAY_SCALE : 0;
         uniforms.gkDiffusionThreshold.value = diffusion.contrastThreshold ?? 0.5;
         uniforms.gkDiffusionPower.value = Math.max(diffusion.contrastPower || 1, 1e-3);
@@ -501,7 +811,9 @@ export class GakumasPostPass {
         this.velocityTarget.setSize(w, h);
         const hw = Math.max(1, Math.floor(w / 2));
         const hh = Math.max(1, Math.floor(h / 2));
-        for (const target of [this.bloomA, this.bloomB, this.softA, this.softB]) target.setSize(hw, hh);
+        for (const target of [this.bloomA, this.bloomB, this.softA, this.softB, this.spaceA, this.spaceB]) target.setSize(hw, hh);
+        this.dofTarget.setSize(w, h);
+        this.spaceFull.setSize(w, h);
         this.resetHistory = true;
         this.motionHint = 0;
         this.velocityMemory = new WeakMap();
@@ -613,6 +925,28 @@ export class GakumasPostPass {
         return pong;
     }
 
+    applyCaptureSpace(source, viewCamera) {
+        const near = Math.max(viewCamera.near || 0.1, 1e-4);
+        const far = Math.max(viewCamera.far || 1000, near + 0.01);
+        const camera = this.aoMaterial.uniforms.gkCamera.value;
+        camera.set(near, far);
+        this.spaceMaterial.uniforms.gkCamera.value.copy(camera);
+        const uniforms = this.spaceMaterial.uniforms;
+        uniforms.gkSource.value = source;
+        uniforms.gkDepth.value = this.depth;
+        uniforms.gkVelocity.value = this.velocityFrame ? this.velocityTarget.texture : this.velocity.fallbackTexture;
+        uniforms.gkHasVelocity.value = captureMotionBlur && this.velocityFrame ? 1 : 0;
+        uniforms.gkTexel.value.set(1 / this.color.width, 1 / this.color.height);
+        uniforms.gkProj.value.copy(viewCamera.projectionMatrix);
+        uniforms.gkInvProj.value.copy(viewCamera.projectionMatrixInverse);
+        this.contactView.copy(this.contactWorld).transformDirection(viewCamera.matrixWorldInverse);
+        uniforms.gkContactView.value.copy(this.contactView);
+        this.viewUp.set(0, 1, 0).transformDirection(viewCamera.matrixWorldInverse).normalize();
+        uniforms.gkViewUp.value.copy(this.viewUp);
+        this.blit(this.spaceMaterial, this.spaceFull);
+        return this.spaceFull.texture;
+    }
+
     render(draw, viewCamera, { present = true, velocityRoot = null } = {}) {
         this.renderer.getSize(this.size);
         this.setSize(this.size.x, this.size.y);
@@ -640,9 +974,32 @@ export class GakumasPostPass {
             } else {
                 this.velocityFrame = false;
             }
+            if (viewCamera) source = this.applyCaptureSpace(this.color.texture, viewCamera);
+            if (useTaa) this.taaMaterial.uniforms.gkCurrent.value = source;
             const resolved = useTaa ? this.resolveHistory(viewCamera) : null;
+            this.taaMaterial.uniforms.gkCurrent.value = this.color.texture;
             if (useTaa) this.clearJitter(viewCamera);
-            source = resolved ? resolved.texture : this.color.texture;
+            source = resolved ? resolved.texture : source;
+            if (this.modules.fxaa && !useTaa) {
+                const fxaa = this.fxaaMaterial.uniforms;
+                fxaa.gkSource.value = source;
+                fxaa.gkTexel.value.set(1 / this.color.width, 1 / this.color.height);
+                this.blit(this.fxaaMaterial, this.history[0]);
+                source = this.history[0].texture;
+            }
+            if (this.depthOfField && viewCamera) {
+                const radius = Math.min(22, Math.max(2, 72 / this.depthOfField.aperture));
+                const uniforms = this.dofMaterial.uniforms;
+                uniforms.gkSource.value = source;
+                uniforms.gkDepth.value = this.depth;
+                uniforms.gkTexel.value.set(1 / this.color.width, 1 / this.color.height);
+                uniforms.gkNear.value = Math.max(viewCamera.near || 0.1, 1e-4);
+                uniforms.gkFar.value = Math.max(viewCamera.far || 1000, uniforms.gkNear.value + 0.01);
+                uniforms.gkFocus.value = this.depthOfField.focus;
+                uniforms.gkRadius.value = radius;
+                this.blit(this.dofMaterial, this.dofTarget);
+                source = this.dofTarget.texture;
+            }
             if (!present) return source;
             this.extractMaterial.uniforms.gkSource.value = source;
             this.compositeMaterial.uniforms.gkSource.value = source;
@@ -652,7 +1009,8 @@ export class GakumasPostPass {
                 this.compositeMaterial.uniforms.gkBloomMap.value = bloom.texture;
             }
             if (this.modules.diffusion && this.softRadius > 0) {
-                const soft = this.blur(resolved || this.color, this.softRadius, this.softA, this.softB);
+                const softTarget = resolved || (this.modules.fxaa && !useTaa ? this.history[0] : (viewCamera ? this.spaceFull : this.color));
+                const soft = this.blur(softTarget, this.softRadius, this.softA, this.softB);
                 this.compositeMaterial.uniforms.gkSoftMap.value = soft.texture;
             }
             this.renderer.setRenderTarget(null);
@@ -667,13 +1025,17 @@ export class GakumasPostPass {
     }
 
     dispose() {
-        for (const target of [this.color, this.msaa, this.history[0], this.history[1], this.bloomA, this.bloomB, this.softA, this.softB]) if (target) target.dispose();
+        for (const target of [this.color, this.msaa, this.history[0], this.history[1], this.bloomA, this.bloomB, this.softA, this.softB, this.dofTarget, this.spaceA, this.spaceB, this.spaceFull]) if (target) target.dispose();
         this.velocityTarget?.dispose();
         this.velocity?.dispose();
         this.depth.dispose();
         this.copyMaterial.dispose();
         this.extractMaterial.dispose();
         this.blurMaterial.dispose();
+        this.dofMaterial.dispose();
+        this.fxaaMaterial.dispose();
+        this.aoMaterial.dispose();
+        this.spaceMaterial.dispose();
         this.taaMaterial.dispose();
         this.compositeMaterial.dispose();
         this.mesh.geometry.dispose();

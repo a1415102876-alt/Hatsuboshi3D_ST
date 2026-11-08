@@ -121,6 +121,22 @@ export function applyActorPose(object, pose) {
     return true;
 }
 
+const FULL_FRAME_SENSOR_HEIGHT = 24;
+
+export function focalLengthToFov(focal) {
+    const mm = Number(focal);
+    if (!Number.isFinite(mm) || mm <= 0) return null;
+    return MathUtils.radToDeg(2 * Math.atan((FULL_FRAME_SENSOR_HEIGHT * 0.5) / mm));
+}
+
+export function applyCameraFocal(camera, focal) {
+    const fov = focalLengthToFov(focal);
+    if (!camera || fov == null) return false;
+    camera.fov = fov;
+    camera.updateProjectionMatrix?.();
+    return true;
+}
+
 export function applyCameraPose(camera, pose) {
     const x = Number(pose?.x);
     const y = Number(pose?.y);

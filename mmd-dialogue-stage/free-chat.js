@@ -1,7 +1,7 @@
 import { BeatPlayerApp } from './beat-player.js?v=20261030-perf-diagnostic-v2';
 import { createLocalChatBridge } from './beat-chat.js?v=20261024-worldbook-v1';
 import { loadTavernWorldbook } from './worldbook-scan.js?v=20261024-worldbook-v1';
-import { applyFishTtsSettings, fishTtsStatus, resolveFishTtsSettings } from './free-chat-tts.js?v=20261024-tts-v1';
+import { applyFishTtsSettings, fishTtsStatus, resolveFishTtsSettings } from './free-chat-tts.js?v=20261106-tts-host-v1';
 
 const SETTINGS_KEY = 'hatsuFreeChatSettings';
 

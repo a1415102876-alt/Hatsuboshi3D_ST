@@ -1,6 +1,6 @@
 import { resolveNpcPortrait } from './beat-npc-portraits.js?v=20261102-krnh-3d-v1';
 import { sceneIdolId, SCENE_IDOLS, STAR_EYE_IDOLS } from './scene-protocol.js?v=20261102-krnh-3d-v1';
-import { BEAT_CUE_IDS, BEAT_BODY_CUE_SPECS, BEAT_EFFECT_ALIASES, BEAT_EFFECT_IDS, BEAT_FACE_ALIASES, BEAT_FACE_IDS, BEAT_OVERLAY_CUE_IDS, isBeatMotionFile, resolveBeatCueAlias } from './beat-cues.js?v=20261101-motion-file-v1';
+import { BEAT_CUE_IDS, BEAT_BODY_CUE_SPECS, BEAT_EFFECT_ALIASES, BEAT_EFFECT_IDS, BEAT_FACE_ALIASES, BEAT_FACE_IDS, BEAT_OVERLAY_CUE_IDS, isBeatMotionFile, resolveBeatCueAlias } from './beat-cues.js?v=20261103-paired-face-v1';
 import { normalizeFaceCue, normalizeGestureCue } from './dialogue-intent.js?v=20261026-cue-words-v1';
 import { resolveBeatBackgroundAsset } from './beat-background-assets.js?v=20261029-bg-filename-v1';
 import { resolveBeatCostume } from './beat-costumes.js?v=20261013-all-idol-solo1-v1';
@@ -42,6 +42,13 @@ const SHOT_WORDS = Object.freeze({ 中景: 'medium', 近景: 'close', 特写: 'c
 // `camera` is an optional framing override and deliberately shares the shot
 // vocabulary. The same value is consumed by both 2D and 3D rendering.
 const CAMERA_WORDS = SHOT_WORDS;
+const BEAT_TRANSITIONS = Object.freeze({
+    clock: 'clock',
+    时钟: 'clock',
+    时钟圆形: 'clock',
+    圆形时钟: 'clock',
+});
+
 function canonToken(value, words) {
     const raw = String(value || '').trim();
     if (!raw) return '';
@@ -116,7 +123,7 @@ function parseLocalizedBeatText(rawText, speaker) {
 }
 
 function isFishVoicedSpeaker(speaker) {
-    return /(?:kotone|fktn|藤田琴音|琴音|hski|花海咲季|咲季|ttmr|月村手毬|手毬|shro|筱泽广|篠澤広|广|hmsz|秦谷美铃|美铃|kllj|葛城莉莉娅|莉莉娅|jsna|十王星南|星南|hume|花海佑芽|佑芽|hrnm|rinami|姬崎莉波|莉波|ssmk|sumika|shiun\s+sumika|紫云清夏|清夏|amao|mao|arimura\s+mao|有村麻央|麻央|atbm|tsubame|amaya\s+tsubame|雨夜燕|燕|kcna|仓本千奈|千奈)/i.test(String(speaker || ''));
+    return /(?:kotone|fktn|藤田琴音|琴音|hski|花海咲季|咲季|ttmr|月村手毬|手毬|shro|筱泽广|篠澤広|广|hmsz|秦谷美铃|美铃|kllj|葛城莉莉娅|莉莉娅|jsna|十王星南|星南|hume|花海佑芽|佑芽|hrnm|rinami|姬崎莉波|莉波|ssmk|sumika|shiun\s+sumika|紫云清夏|清夏|amao|mao|arimura\s+mao|有村麻央|麻央|atbm|tsubame|amaya\s+tsubame|雨夜燕|燕|kcna|仓本千奈|千奈|krnh|贺阳燐羽|賀陽燐羽|燐羽|nasr|asari|亚纱里|亜紗里)/i.test(String(speaker || ''));
 }
 
 function addError(errors, code, message, index, beat = null) {
@@ -240,10 +247,12 @@ export function parseBeatScript(source, options = {}) {
             cue = cues.has('talk') ? 'talk' : [...cues][0] || 'idle';
         }
 
-        let face = portrait ? portrait.emotion : resolveFaceWord(attributes.face || '');
+        const rawFace = String(attributes.face || '').trim();
+        const faceMotion = !portrait && isBeatMotionFile(rawFace);
+        let face = portrait ? portrait.emotion : (faceMotion ? rawFace.replace(/\\/gu, '/').split('/').pop() : resolveFaceWord(rawFace));
         if (portrait) {
             if (!portrait.matchedFace) addError(errors, 'unknown-portrait-face', `当前角色没有立绘表情：${attributes.face}，已回退到默认立绘。`, openIndex, beatId);
-        } else {
+        } else if (!faceMotion) {
             face = BEAT_FACE_ALIASES[face] || face;
             if (face && !faces.has(face)) {
                 addError(errors, 'unknown-face', `未知独立表情：${face}，已回退到默认表情。`, openIndex, beatId);
@@ -290,8 +299,7 @@ export function parseBeatScript(source, options = {}) {
             // A 2D NPC face must never change the last visible idol's morphs.
             validOverlays = [];
             validEffects = [];
-        } else if (motionFile) {
-            face = '';
+        } else if (motionFile || faceMotion) {
             validOverlays = [];
         } else if (bodySpec) face ||= bodySpec.defaultFace;
         else {
@@ -347,8 +355,14 @@ export function parseBeatScript(source, options = {}) {
             addError(errors, 'unknown-wait', `未知等待方式：${wait}，已回退到 text。`, openIndex, beatId);
             wait = 'text';
         }
+        const requestedTransition = String(attributes.transition || '').trim();
+        const transition = BEAT_TRANSITIONS[requestedTransition] || BEAT_TRANSITIONS[requestedTransition.toLowerCase()] || '';
+        if (requestedTransition && !transition) {
+            addError(errors, 'unknown-transition', `未知转场：${requestedTransition}，已忽略。`, openIndex, beatId);
+        }
 
         const beat = { id: beatId, speaker, cue, look, shot, text, wait };
+        if (transition) beat.transition = transition;
         if (localized.ttsText && isFishVoicedSpeaker(speaker)) beat.ttsText = localized.ttsText;
         if (face) beat.face = face;
         if (portrait) beat.portrait = portrait;
@@ -365,6 +379,16 @@ export function parseBeatScript(source, options = {}) {
             addError(errors, 'invalid-camera-pose', 'camera-pose 需要 x,y,z,水平角,俯仰角 五个数字，已忽略。', openIndex, beatId);
         }
         if (cameraPose) beat.cameraPose = cameraPose;
+        const focal = parseFocalLength(attributes.focal);
+        if (String(attributes.focal || '').trim() && !focal) {
+            addError(errors, 'invalid-focal', 'focal 需要一个正数毫米焦距，已忽略。', openIndex, beatId);
+        }
+        if (focal) beat.focal = focal;
+        const dof = parseDepthOfField(attributes.dof);
+        if (String(attributes.dof || '').trim() && !dof) {
+            addError(errors, 'invalid-dof', 'dof 需要光圈，或光圈,对焦距离，已忽略。', openIndex, beatId);
+        }
+        if (dof) beat.dof = dof;
         const actorPose = parseActorPose(attributes['actor-pose']);
         if (String(attributes['actor-pose'] || '').trim() && !actorPose) {
             addError(errors, 'invalid-actor-pose', 'actor-pose 需要 x,y,z,朝向 四个数字，已忽略。', openIndex, beatId);
@@ -375,6 +399,10 @@ export function parseBeatScript(source, options = {}) {
             addError(errors, 'invalid-camera-move', 'camera-move 需要起点 x,y,z,水平角,俯仰角，终点 x,y,z,水平角,俯仰角，以及秒数，已忽略。', openIndex, beatId);
         }
         if (cameraMove) beat.cameraMove = cameraMove;
+        const cameraWalk = parseCameraWalk(attributes['camera-walk']);
+        if (cameraWalk === true && cameraMove) beat.cameraMove.walk = true;
+        else if (cameraWalk === true) addError(errors, 'invalid-camera-walk', 'camera-walk 需要同时写完整的 camera-move，已忽略。', openIndex, beatId);
+        else if (cameraWalk == null) addError(errors, 'invalid-camera-walk', 'camera-walk 只能写 1，已忽略。', openIndex, beatId);
         const actorMove = parseActorMove(attributes['actor-move']);
         if (String(attributes['actor-move'] || '').trim() && !actorMove) {
             addError(errors, 'invalid-actor-move', 'actor-move 需要起点 x,y,z,朝向，终点 x,y,z,朝向，以及秒数，已忽略。', openIndex, beatId);
@@ -414,6 +442,43 @@ export function parseCameraPose(value) {
     return { x, y, z, yaw, pitch: Math.min(80, Math.max(-80, pitch)) };
 }
 
+export function parseFocalLength(value) {
+    const focal = Number(String(value ?? '').trim());
+    if (!Number.isFinite(focal) || focal <= 0) return null;
+    return Math.min(200, Math.max(10, focal));
+}
+
+export function formatFocalLength(value) {
+    const focal = parseFocalLength(value);
+    return focal ? String(Math.round(focal * 10) / 10) : '';
+}
+
+export function parseDepthOfField(value) {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+        const focus = value.focus == null || value.focus === '' ? '' : value.focus;
+        return parseDepthOfField([value.aperture, focus].filter(part => part !== '').join(','));
+    }
+    const parts = String(value ?? '').split(',').map(part => part.trim()).filter(Boolean);
+    if (!parts.length || parts.length > 2) return null;
+    const aperture = Number(parts[0]);
+    if (!Number.isFinite(aperture) || aperture <= 0) return null;
+    const dof = { aperture: Math.min(22, Math.max(1.2, aperture)) };
+    if (parts.length === 2) {
+        const focus = Number(parts[1]);
+        if (!Number.isFinite(focus) || focus <= 0) return null;
+        dof.focus = focus;
+    }
+    return dof;
+}
+
+export function formatDepthOfField(value) {
+    const dof = parseDepthOfField(value);
+    if (!dof) return '';
+    const aperture = String(Math.round(dof.aperture * 10) / 10);
+    if (!Number.isFinite(dof.focus)) return aperture;
+    return `${aperture},${String(Math.round(dof.focus * 1000) / 1000)}`;
+}
+
 export function formatCameraPose(pose) {
     const parsed = parseCameraPose(pose);
     if (!parsed) return '';
@@ -438,6 +503,34 @@ export function formatActorPose(pose) {
     return [parsed.x, parsed.y, parsed.z, parsed.yaw]
         .map(value => String(Math.round(value * 1000) / 1000))
         .join(',');
+}
+
+function copyActorPose(pose) {
+    const parsed = parseActorPose(pose);
+    return parsed ? { ...parsed } : null;
+}
+
+// A free pose belongs to the actor, not the line. Later lines keep the last
+// placement until that same actor writes a new one. A finished move leaves
+// the actor at its destination.
+export function resolveActorPoses(beats, index) {
+    const poses = new Map();
+    const list = Array.isArray(beats) ? beats : [];
+    if (!list.length) return poses;
+    const requested = Number(index);
+    const last = Math.min(Math.max(Number.isFinite(requested) ? requested : 0, 0), list.length - 1);
+    for (let i = 0; i <= last; i++) {
+        const beat = list[i];
+        const idolId = beatActorId(beat?.speaker);
+        if (!idolId) continue;
+        const pose = copyActorPose(beat?.actorPose);
+        if (pose) poses.set(idolId, pose);
+        if (i < last) {
+            const arrived = copyActorPose(beat?.actorMove?.to);
+            if (arrived) poses.set(idolId, arrived);
+        }
+    }
+    return poses;
 }
 
 function roundMoveNumber(value) {
@@ -468,6 +561,26 @@ export function formatCameraMove(move) {
     const parsed = parseCameraMove(move);
     if (!parsed) return '';
     return [parsed.from.x, parsed.from.y, parsed.from.z, parsed.from.yaw, parsed.from.pitch, parsed.to.x, parsed.to.y, parsed.to.z, parsed.to.yaw, parsed.to.pitch, parsed.duration].map(roundMoveNumber).join(',');
+}
+
+const CAMERA_WALK_STEPS_PER_SECOND = 1.2;
+const CAMERA_WALK_AMPLITUDE = 0.16;
+
+export function parseCameraWalk(value) {
+    const text = String(value ?? '').trim().toLowerCase();
+    if (!text || text === '0' || text === 'false' || text === 'off') return false;
+    if (text === '1' || text === 'true' || text === 'walk' || text === 'on') return true;
+    return null;
+}
+
+// A walking operator bobs once per footstep. The offset is world-up, starts and
+// ends at zero, and stays regular through the middle of the move.
+export function cameraWalkOffset(elapsed, duration) {
+    const time = Number(elapsed);
+    const span = Number(duration);
+    if (!Number.isFinite(time) || !Number.isFinite(span) || span <= 0 || time <= 0 || time >= span) return 0;
+    const fade = Math.min(1, time / 0.18, (span - time) / 0.22);
+    return Math.sin(time * Math.PI * 2 * CAMERA_WALK_STEPS_PER_SECOND) * CAMERA_WALK_AMPLITUDE * fade;
 }
 
 function actorMovePose(parts) {

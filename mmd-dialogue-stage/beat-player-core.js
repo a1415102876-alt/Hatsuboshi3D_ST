@@ -45,11 +45,23 @@ export function beatActorId(speaker) {
 // to an offscreen speaker holds the same idol and framing as sequential play.
 export function resolveBeatShot(beats, index) {
     const source = Array.isArray(beats) ? beats : [];
-    for (let i = Math.min(index, source.length - 1); i >= 0; i--) {
-        const focus = beatActorId(source[i]?.speaker);
-        if (focus) return { focus, shot: source[i].shot || 'medium', inherited: i !== index };
+    if (!source.length) return { focus: '', shot: 'medium', inherited: false };
+    const requested = Number(index);
+    const currentIndex = Math.min(Math.max(Number.isFinite(requested) ? requested : 0, 0), source.length - 1);
+    let focus = '';
+    let focusIndex = -1;
+    for (let i = currentIndex; i >= 0; i--) {
+        const actor = beatActorId(source[i]?.speaker);
+        if (!actor) continue;
+        focus = actor;
+        focusIndex = i;
+        break;
     }
-    return { focus: '', shot: 'medium', inherited: false };
+    // A producer or narrator line keeps the last idol in frame, but its own
+    // shot still decides the framing. The parser has already copied an omitted
+    // shot forward, so this reads the beat itself.
+    const shot = source[currentIndex]?.shot || (focusIndex >= 0 ? source[focusIndex].shot : '') || 'medium';
+    return { focus, shot, inherited: focusIndex >= 0 && focusIndex !== currentIndex };
 }
 
 export const BEAT_CUES = BEAT_CUE_IDS;

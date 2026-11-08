@@ -1,5 +1,6 @@
 import { BEAT_BACKGROUND_NAMES } from '../beat-backgrounds.js';
 import '../beat-background-routing.js';
+import { GAKUMAS_EXPAND_STYLE } from './gakumas-expand-style.js';
 
 export const WEIRD_SCRIPT_MODE = Object.freeze({ FULL: 'full', EXPAND: 'expand', DIRECT: 'direct' });
 
@@ -36,19 +37,23 @@ function beatOutputRules() {
     '每个有台词的偶像 Beat 必须同时写两段，顺序固定，不能只写其中一段：<display lang="zh">玩家看到的中文</display><tts lang="ja">给语音朗读的日语</tts>。',
     'display 的 lang 必须是 zh，内容是中文；tts 的 lang 必须是 ja，内容是和这句中文意思对应的日语。不要把中文写进 tts，不要把日语写进 display，不要省略 lang，不要写成 <tts>日语</tts>。',
     '制作人和旁白只写 <display lang="zh">，不要写 tts。没有台词的纯动作 Beat 也只写一句短 display，不要写空的 tts。',
-    '样例：<beat id="b001" speaker="担当偶像" cue="说话" face="高兴" look="camera" position="center" background="宿舍走廊-午" shot="medium" wait="text"><display lang="zh">今天从这里开始。</display><tts lang="ja">今日はここから始めよう。</tts></beat>',
+    'speaker 和 look 只能使用这些登记 id，不要用罗马音，也不要自造英文名。',
+    'kotone=藤田琴音；mao=有村麻央；rinami=姬崎莉波；hski=花海咲季；hume=花海佑芽；ssmk=紫云清夏；kllj=葛城莉莉娅；jsna=十王星南；hmsz=秦谷美铃；atbm=雨夜燕；ttmr=月村手毬；kcna=仓本千奈；shro=筱泽广；krnh=贺阳燐羽；nasr=亚纱里老师。',
+    '制作人用 producer，旁白用 narrator。美铃必须写 hmsz，不要写 misuzu。燐羽必须写 krnh，不要写 rinpa 或 rinha。手毬必须写 ttmr，不要写 temari。',
+    'look 写 camera，或写在场角色的同一个登记 id。不要把 left、right 写进 look。',
+    '没有 3D 模型、只用头像的角色：andk=蓝井抚子；fobr=胧；hkne=冰渡香名江；mska=村雨愁佳；msrn=芹菜；myu0=真城优；sgka=白草月花；sson=白草四音。',
+    '样例只说明标签格式。speaker="角色"是占位，必须换成上面的登记 id，不要原样输出，也不要写成“担当偶像”：<beat id="b001" speaker="角色" cue="说话" face="高兴" look="camera" position="center" background="宿舍走廊-午" shot="medium" wait="text"><display lang="zh">今天从这里开始。</display><tts lang="ja">今日はここから始めよう。</tts></beat>',
   ].join('\n');
 }
 
-function beatContract({ idolName = '' } = {}) {
-  const idol = safeText(idolName) || '当前担当偶像';
+function beatContract() {
   return [
     '你是 Beat 剧情编排器。只输出可直接交给 BeatPlayerApp 的完整 <beat>...</beat> 标签，不要输出解释、Markdown 围栏、JSON、旧 VN/NIA 标签或其他外壳。',
+    '本次没有当前担当，也没有默认担当偶像。不要根据沙盒存档、编年史或常驻设定补一位担当。谁出场、和制作人是什么关系，只按用户文案；文案没有写担当关系时，不要安排担当，也不要补一位偶像来当担当。',
     '每个 Beat 都要有 id、speaker、cue、look、position、background、shot、wait。cue="说话" 时再加 face。',
     beatOutputRules(),
-    `当前偶像：${idol}`,
-    'speaker 只能使用当前担当、producer 或已注册的其他角色，不要创造新的角色 ID。',
-    'position 只能是 left、center、right；shot 使用 wide、medium、close、reaction、keep；look 用 camera，或看向在场的另一个 speaker。情绪或动作发生明显转换时拆到下一个 Beat。',
+    'speaker 使用文案里实际说话的人，并且必须换成上表里的登记 id。不要创造新的角色 ID。',
+    'position 只能是 left、center、right；shot 使用 wide、medium、close、reaction、keep。情绪或动作发生明显转换时拆到下一个 Beat。',
     'wait 有台词时用 text；这句要等语音念完再进下一句时用 voice。',
     'background 写成「地点-时段」，时段只用晨、午、夕、夜，例如宿舍走廊-午、学生会室-夕。不要写 .png 文件名。地点只能从下面的名单里选；文案没有地点时按语境补一个名单里的地点。同一段场景不要来回换地点。',
     `尽量完整写完用户文案；自然延伸时允许超过 ${DEFAULT_BEAT_TARGET} 个 Beat，但不要为了凑数重复句子。`,
@@ -78,14 +83,14 @@ export function formatWeirdPromptLocations(names = BEAT_BACKGROUND_NAMES, { maxC
   return lines.join('\n');
 }
 
-export function buildWeirdScriptPrompt({ mode = WEIRD_SCRIPT_MODE.FULL, text = '', idolName = '', locations = BEAT_BACKGROUND_NAMES, beatTarget = DEFAULT_BEAT_TARGET } = {}) {
+export function buildWeirdScriptPrompt({ mode = WEIRD_SCRIPT_MODE.FULL, text = '', locations = BEAT_BACKGROUND_NAMES, beatTarget = DEFAULT_BEAT_TARGET } = {}) {
   const source = safeText(text);
   const locationList = formatWeirdPromptLocations(locations);
   const target = Number.isFinite(Number(beatTarget)) ? Math.max(1, Math.floor(Number(beatTarget))) : DEFAULT_BEAT_TARGET;
-  const contract = beatContract({ idolName });
+  const contract = beatContract();
   const modeInstruction = mode === WEIRD_SCRIPT_MODE.EXPAND
     ? [
-      '这是 AI 扩写模式。根据当前担当偶像的角色性格、说话方式和世界书约束，把用户点子扩展为完整长篇；不要直接复述资料，也不要泄露世界书原文。',
+      '这是 AI 扩写模式。按用户点子里写到的人物和关系扩写成完整长篇。世界书只用来核对已经出场的人的性格，不要用它补一位默认担当，也不要泄露世界书原文。',
       `用户点子：\n${source}`,
     ]
     : [
@@ -99,8 +104,9 @@ export function buildWeirdScriptPrompt({ mode = WEIRD_SCRIPT_MODE.FULL, text = '
     ...modeInstruction,
     '允许使用的地点清单：',
     locationList,
-    mode === WEIRD_SCRIPT_MODE.EXPAND ? '扩写时遵守当前偶像的世界书设定。' : '全文案模式不读取角色资料、历史或世界书，只依据本提示和用户文案。',
-  ].join('\n\n');
+    mode === WEIRD_SCRIPT_MODE.EXPAND ? '扩写时只参考文案里已经出现的角色设定。世界书核对性格，下面的文风参考只约束口气。' : '全文案模式不读取角色资料、历史、世界书或文风参考，只依据本提示和用户文案。',
+    mode === WEIRD_SCRIPT_MODE.EXPAND ? GAKUMAS_EXPAND_STYLE : '',
+  ].filter(Boolean).join('\n\n');
 }
 
 export function prepareDirectBeatScript(source) {
@@ -131,18 +137,19 @@ export function extractClosedBeatScript(source) {
   };
 }
 
-export function buildWeirdContinuationPrompt({ completedScript = '', completedCount = 0, lastBackground = '', idolName = '' } = {}) {
+export function buildWeirdContinuationPrompt({ completedScript = '', completedCount = 0, lastBackground = '', style = false } = {}) {
   const closed = safeText(completedScript);
   const count = Number.isFinite(Number(completedCount)) ? Math.max(0, Math.floor(Number(completedCount))) : 0;
   const background = safeText(lastBackground) || '沿用上一个完整 Beat 的 background';
   return [
     '[HATSU_WEIRD_SCRIPT_CONTINUE]',
-    `当前偶像：${safeText(idolName) || '当前担当偶像'}`,
+    '本次没有当前担当，也没有默认担当偶像。续写时不要把任何未在已完成 Beat 里担任担当的人补成担当。',
     `前面已经保留 ${count} 个完整 Beat，最后地点为：${background}。`,
     '只输出后续新的、完整闭合的 <beat>...</beat>；不要重复已完成内容，不要输出解释或 Markdown。',
     beatOutputRules(),
     '保持前文人物关系、情绪和地点连续；如果故事已经自然结束，就输出剩余收束 Beat，不要硬凑长度。',
+    style ? GAKUMAS_EXPAND_STYLE : '',
     '已完成内容的末尾仅用于承接：',
     closed.slice(-5000),
-  ].join('\n\n');
+  ].filter(Boolean).join('\n\n');
 }

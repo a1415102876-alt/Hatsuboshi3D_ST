@@ -14,6 +14,7 @@ export class StageAttentionController {
         this.pitchAxis = new Vector3(1, 0, 0);
         this.offsetQuaternion = new Quaternion();
         this.pitchQuaternion = new Quaternion();
+        this.held = false;
     }
 
     static resolveTarget(actorId, targetId, positions = {}) {
@@ -30,6 +31,18 @@ export class StageAttentionController {
         this.target = null;
     }
 
+    adoptBase() {
+        if (this.model) this.baseQuaternion.copy(this.model.quaternion);
+    }
+
+    hold(held = true) {
+        this.held = Boolean(held);
+    }
+
+    lookYawDegrees() {
+        return this.current.x * 26;
+    }
+
     setTarget(id, vector, duration = 0) {
         this.target = id && vector ? { x: Number(vector.x) || 0, y: Number(vector.y) || 0 } : null;
         this.duration = Math.max(0, Number(duration) || 720);
@@ -41,7 +54,7 @@ export class StageAttentionController {
     }
 
     update(delta = 1 / 60) {
-        if (!this.model) return;
+        if (!this.model || this.held) return;
         const target = this.target || this.neutralTarget;
         const amount = this.duration > 0 ? Math.min(1, (Number(delta) || 0) / (this.duration / 1000)) : 1 - Math.pow(0.001, Math.min(Math.max(Number(delta) || 0, 0), 0.2) * 8);
         this.current.x = MathUtils.lerp(this.current.x, target.x, amount);

@@ -1,14 +1,14 @@
-import { BeatPlayerApp } from '../beat-player.js?v=20261103-fktn-profile-r2-v1';
-import { setLivePictureOptions } from '../live-portrait.js?v=20261103-fktn-profile-r2-v1';
+import { BeatPlayerApp } from '../beat-player.js?v=20261108-chat-clock-v1';
+import { setLivePictureOptions } from '../live-portrait.js?v=20261107-surprise-mouth-v1';
 import { beatActorId } from '../beat-player-core.js?v=20261102-krnh-3d-v1';
 import { advanceSandboxMinutes, applyStoryMinutes, buildSandboxSnapshot, createSandboxState, parseSandboxAdvance, parseSandboxClockSet, parseTimeMark, setSandboxClock, validateAction } from './sandbox-core.js?v=20261029-commission-v1';
 import { buildActionBeat, runSandboxAction } from './sandbox-beat.js';
 import { commitLongPlan, parseLongPlan, validateLongPlan } from './sandbox-planner.js?v=20261028-field-garden-v1';
 import { applyQuestEffects, getQuestStatusSummary, isFirstLiveReady, parsePraiseFlag } from './sandbox-quests.js?v=20261028-story-guide-v1';
 import { clearSandboxSave, readSandboxSave, writeSandboxSave } from './sandbox-save.js?v=20261028-suggest-v1';
-import { chatCompletionsUrl, createLocalChatBridge, normalizeChatReply } from '../beat-chat.js?v=20261029-antigravity-token-fallback-v2';
+import { chatCompletionsUrl, createLocalChatBridge, normalizeChatReply } from '../beat-chat.js?v=20261103-weird-no-default-idol-v1';
 import { loadTavernWorldbook } from '../worldbook-scan.js?v=20261024-worldbook-v1';
-import { applyFishTtsSettings, fishTtsStatus, resolveFishTtsSettings } from '../free-chat-tts.js?v=20261024-tts-v1';
+import { applyFishTtsSettings, fishTtsStatus, resolveFishTtsSettings } from '../free-chat-tts.js?v=20261106-tts-host-v1';
 import { SANDBOX_CHAT_SETTINGS_KEY, buildSandboxChatSettings, mergeStoredChatSettings, readStoredFreeChatSettings } from './sandbox-chat.js?v=20261026-settings-persist-v1';
 import { mountSandboxPhone } from './sandbox-phone.js?v=20261027-phone-v2';
 import { applySceneCastPatch, buildSandboxContactPrompt, canonicalCastIdol, extractSceneCastPatch, latestPendingContact } from './sandbox-cast.js?v=20261028-field-garden-v1';
@@ -67,10 +67,8 @@ import { FRONT_GATE_MENU, OUTING_MENU, canLocationHostAction, getSandboxLocation
 import { buildArrivalPrompt, buildIdolOrderPrompt, describeIdolOrder, fallbackOrderScript, idolVisible, normalizeIdolOrder, orderCommandFromChoice, planIdolOrder, presenceOpening, resolveArrival, withoutIdolCast } from './sandbox-orders.js?v=20261028-suggest-v1';
 import { CITY_MAP_VIEW, renderSandboxMap } from './sandbox-map.js?v=20261028-field-garden-v1';
 import { produceActionSettlement, produceMeters, rankSpriteStyle } from './sandbox-produce-stats.js?v=20261026-produce-actions-v1';
-import { SANDBOX_PICTURE_KEY, normalizeSandboxPicture } from './sandbox-picture.js?v=20261030-dialogue-font-v1';
+import { SANDBOX_PICTURE_KEY, applyPictureTaaToggle, normalizeSandboxPicture } from './sandbox-picture.js?v=20261105-floor-ssr-v1';
 import { installSandboxResponsiveLayout } from './sandbox-layout.js?v=20261029-desktop-layout-v3';
-import { buildWeirdContinuationPrompt, buildWeirdScriptPrompt, extractClosedBeatScript, prepareDirectBeatScript, WEIRD_SCRIPT_MODE } from './sandbox-weird-script.js?v=20261029-weird-script-bg-v1';
-
 const PRODUCE_UI = '../hatsu-produce-local/UI/';
 const PRODUCE_CARDS = Object.freeze([
   ['lesson', 'Vo', 'Vo公开课', 'Lesson_Vo.png'],
@@ -160,11 +158,6 @@ setLivePictureOptions(initialPicture);
 const responsiveLayout = installSandboxResponsiveLayout(document.querySelector('.sandbox-home-app'));
 applySandboxDialogueFontSize(initialPicture);
 const app = new BeatPlayerApp(document, { loadSample: false, chatBridge: bridge });
-const updateBeatPlayButton = app.updatePlayButton.bind(app);
-app.updatePlayButton = () => {
-  updateBeatPlayButton();
-  syncWeirdScriptAutoButton();
-};
 const syncBeatViewport = () => {
   responsiveLayout.refresh();
   applySandboxDialogueFontSize(readSandboxPicture());
@@ -211,273 +204,14 @@ if (migratedLocationState !== state) state = writeSandboxSave(migratedLocationSt
 localBridge.restore(state.chatHistory);
 let panelKind = 'home';
 let mapView = null;
-let weirdScriptMode = WEIRD_SCRIPT_MODE.FULL;
-let weirdScriptPage = 'idle';
-let weirdScriptController = null;
-let weirdScriptBusy = false;
-let weirdScriptCompleted = '';
-let weirdScriptLastBackground = '';
-
-function syncWeirdScriptAutoButton() {
-  const button = field('sandboxWeirdScriptAutoBtn');
-  if (!button) return;
-  const playing = Boolean(app.state.playing) && weirdScriptPage === 'playback';
-  button.setAttribute('aria-pressed', playing ? 'true' : 'false');
-  button.textContent = playing ? '暂停' : '自动';
-}
-
-function toggleWeirdScriptAutoplay() {
-  if (weirdScriptPage !== 'playback') return;
-  if (app.state.playing) {
-    app.clearTimer();
-    app.state.playing = false;
-    app.updatePlayButton();
-    return;
-  }
-  const auto = field('beatAutoPlay');
-  if (auto) auto.checked = true;
-  app.state.playing = true;
-  app.updatePlayButton();
-  const index = app.state.current < 0 ? 0 : app.state.current;
-  void app.goTo(index, { autoplay: true });
-}
-
-function setWeirdScriptStatus(message = '') {
-  const status = field('sandboxWeirdScriptStatus');
-  if (status) status.textContent = String(message || '');
-}
-
-function updateWeirdScriptModeButtons() {
-  document.querySelectorAll('[data-weird-mode]').forEach((button) => {
-    const selected = button.dataset.weirdMode === weirdScriptMode;
-    button.classList.toggle('is-active', selected);
-    button.setAttribute('aria-pressed', selected ? 'true' : 'false');
-  });
-}
-
-function weirdScriptModeCopy() {
-  if (weirdScriptMode === WEIRD_SCRIPT_MODE.DIRECT) {
-    return {
-      status: '直接粘贴完整的 Beat 脚本。不会提交给 AI，解析资源后开始演出。',
-      placeholder: '粘贴完整的 <beat> 脚本',
-      action: '解析并开始演出',
-    };
-  }
-  if (weirdScriptMode === WEIRD_SCRIPT_MODE.EXPAND) {
-    return {
-      status: '扩写模式会读取当前担当偶像的角色世界书。',
-      placeholder: '写下一个点子，让 AI 扩写',
-      action: '解析并生成 Beat',
-    };
-  }
-  return {
-    status: '全文案模式只使用 Beat 规范和地点清单。',
-    placeholder: '粘贴完整文案，解析后生成 Beat',
-    action: '解析并生成 Beat',
-  };
-}
-
-function updateWeirdScriptControls() {
-  const generate = field('sandboxWeirdScriptGenerateBtn');
-  const continueButton = field('sandboxWeirdScriptContinueBtn');
-  const input = field('sandboxWeirdScriptInput');
-  const copy = weirdScriptModeCopy();
-  if (generate) {
-    generate.disabled = weirdScriptBusy;
-    generate.textContent = copy.action;
-  }
-  if (continueButton) {
-    continueButton.hidden = weirdScriptMode === WEIRD_SCRIPT_MODE.DIRECT || !weirdScriptCompleted;
-    continueButton.disabled = weirdScriptBusy;
-  }
-  if (input) {
-    input.disabled = weirdScriptBusy;
-    input.placeholder = copy.placeholder;
-  }
-  updateWeirdScriptModeButtons();
-}
-
-function enterWeirdScriptMode() {
-  if (weirdScriptBusy) return;
-  app.stop();
-  hideOrderDialog();
-  closePassDialog();
-  hideTravelDialog();
-  sandboxPhone.close();
-  showPanel('home');
-  weirdScriptCompleted = '';
-  weirdScriptLastBackground = '';
-  weirdScriptMode = WEIRD_SCRIPT_MODE.FULL;
-  weirdScriptPage = 'compose';
-  const root = document.querySelector('.sandbox-home-app');
-  root?.classList.remove('is-weird-script-playback-mode');
-  root?.classList.add('is-weird-script-mode', 'is-weird-script-compose-mode');
-  const start = field('sandboxStart');
-  if (start) start.hidden = true;
-  const view = field('sandboxWeirdScriptView');
-  if (view) view.hidden = false;
-  setWeirdScriptStatus('输入完整文案、让 AI 扩写，或切换到直接演出粘贴 Beat 脚本。');
-  updateWeirdScriptControls();
-  queueMicrotask(() => field('sandboxWeirdScriptInput')?.focus());
-}
-
-function leaveWeirdScriptMode() {
-  weirdScriptController?.abort();
-  weirdScriptController = null;
-  weirdScriptBusy = false;
-  weirdScriptCompleted = '';
-  weirdScriptLastBackground = '';
-  weirdScriptPage = 'idle';
+function returnToStartScreen() {
+  app.setDialogueRevealEnabled?.(false);
   app.stop();
   app.chatState.pending = false;
   app.chatState.active = false;
-  const root = document.querySelector('.sandbox-home-app');
-  root?.classList.remove('is-weird-script-mode', 'is-weird-script-compose-mode', 'is-weird-script-playback-mode');
-  const view = field('sandboxWeirdScriptView');
-  if (view) view.hidden = true;
-  setWeirdScriptStatus('');
-  updateWeirdScriptControls();
   showPanel('home');
   renderStartScreen();
   render();
-}
-
-function openBeatEditor() {
-  if (weirdScriptBusy) return;
-  const input = field('sandboxWeirdScriptInput');
-  const source = String(input?.value || weirdScriptCompleted || '').trim();
-  sessionStorage.setItem('hatsuBeatEditorSource', source);
-  sessionStorage.setItem('hatsuBeatEditorReturn', `${location.pathname}${location.search}`);
-  location.href = './beat-editor.html?from=weird-script';
-}
-
-function consumeBeatEditorResult() {
-  const result = sessionStorage.getItem('hatsuBeatEditorResult');
-  if (!result) return;
-  sessionStorage.removeItem('hatsuBeatEditorResult');
-  enterWeirdScriptMode();
-  weirdScriptMode = WEIRD_SCRIPT_MODE.DIRECT;
-  const input = field('sandboxWeirdScriptInput');
-  if (input) input.value = result;
-  weirdScriptCompleted = '';
-  weirdScriptLastBackground = '';
-  setWeirdScriptStatus('已从可视化编辑器载入脚本，点击“解析并开始演出”即可播放。');
-  updateWeirdScriptControls();
-}
-
-async function playWeirdScript(script, count) {
-  const source = String(script || '').trim();
-  if (!source) throw new Error('没有可播放的完整 Beat。');
-  app.stop();
-  app.chatState.active = true;
-  app.chatState.introPending = false;
-  app.elements.script.value = source;
-  document.querySelector('.sandbox-story-chrome')?.classList.add('is-visible');
-  applyStageCamera('story');
-  app.compile();
-  const ready = await app.preloadPromise;
-  if (!ready) throw new Error('Beat 资源没有准备好，请重试。');
-  weirdScriptPage = 'playback';
-  const root = document.querySelector('.sandbox-home-app');
-  root?.classList.remove('is-weird-script-mode', 'is-weird-script-compose-mode');
-  root?.classList.add('is-weird-script-playback-mode');
-  const view = field('sandboxWeirdScriptView');
-  if (view) view.hidden = true;
-  await app.goTo(0, { autoplay: false });
-}
-
-async function playDirectWeirdScript(text) {
-  const prepared = prepareDirectBeatScript(text);
-  if (!prepared.ok) {
-    setWeirdScriptStatus(prepared.error);
-    field('sandboxWeirdScriptInput')?.focus();
-    return;
-  }
-  weirdScriptBusy = true;
-  updateWeirdScriptControls();
-  setWeirdScriptStatus(`正在解析 ${prepared.count} 个 Beat 并准备演出资源……`);
-  try {
-    await playWeirdScript(prepared.script, prepared.count);
-  } catch (error) {
-    setWeirdScriptStatus(String(error?.message || error || '演出没有开始。'));
-  } finally {
-    weirdScriptBusy = false;
-    updateWeirdScriptControls();
-  }
-}
-
-async function generateWeirdScript({ continuation = false } = {}) {
-  if (weirdScriptBusy) return;
-  const input = field('sandboxWeirdScriptInput');
-  const text = String(input?.value || '').trim();
-  if (weirdScriptMode === WEIRD_SCRIPT_MODE.DIRECT && !continuation) {
-    await playDirectWeirdScript(text);
-    return;
-  }
-  if (!text && !continuation) {
-    setWeirdScriptStatus('先输入文案或点子。');
-    input?.focus();
-    return;
-  }
-  weirdScriptBusy = true;
-  weirdScriptController = new AbortController();
-  updateWeirdScriptControls();
-  setWeirdScriptStatus(continuation ? '正在续写后面的 Beat……' : '正在生成长篇 Beat，请稍候……');
-  const normalizeOptions = { preserveBackground: true, preserveStaging: true };
-  const prompt = continuation
-    ? buildWeirdContinuationPrompt({
-      completedScript: weirdScriptCompleted,
-      completedCount: extractClosedBeatScript(weirdScriptCompleted).count,
-      lastBackground: weirdScriptLastBackground,
-      idolName: state?.idolId || '藤田琴音',
-    })
-    : buildWeirdScriptPrompt({
-      mode: weirdScriptMode,
-      text,
-      idolName: state?.idolId || '藤田琴音',
-    });
-  try {
-    const bridgeOptions = {
-      timeoutMs: 300000,
-      maxTokensLimit: 48000,
-      useWorldbook: false,
-      useHistory: false,
-      normalizeOptions,
-      signal: weirdScriptController.signal,
-    };
-    if (weirdScriptMode === WEIRD_SCRIPT_MODE.EXPAND) {
-      bridgeOptions.useWorldbook = true;
-    } else {
-      // Full script mode is deliberately isolated from the ordinary sandbox
-      // system prompt, worldbook, and history.
-      bridgeOptions.systemPrompt = '';
-    }
-    const payload = await localBridge.send(prompt, bridgeOptions);
-    const raw = String(payload?.rawText || payload?.text || '');
-    const normalized = normalizeChatReply(raw, normalizeOptions);
-    if (!normalized.ok) throw new Error(normalized.error || '生成结果不是可播放的 Beat。');
-    const combined = continuation ? `${weirdScriptCompleted}\n${normalized.script}` : normalized.script;
-    const closed = extractClosedBeatScript(combined);
-    weirdScriptCompleted = '';
-    weirdScriptLastBackground = closed.lastBackground || '';
-    await playWeirdScript(closed.script, closed.count);
-    updateWeirdScriptControls();
-  } catch (error) {
-    if (error?.message === '已取消闲聊生成' || weirdScriptController?.signal.aborted) return;
-    const raw = String(error?.rawText || '');
-    const closed = raw ? extractClosedBeatScript(raw) : { script: '', count: 0, hasOpenBeat: false, lastBackground: '' };
-    if (closed.count > 0) {
-      weirdScriptCompleted = continuation ? `${weirdScriptCompleted}\n${closed.script}` : closed.script;
-      weirdScriptLastBackground = closed.lastBackground || weirdScriptLastBackground;
-      setWeirdScriptStatus(`已收到 ${extractClosedBeatScript(weirdScriptCompleted).count} 个完整 Beat，输出被截断，可以继续生成。`);
-    } else {
-      setWeirdScriptStatus(String(error?.message || error || '生成失败，请重试。'));
-    }
-  } finally {
-    weirdScriptController = null;
-    weirdScriptBusy = false;
-    updateWeirdScriptControls();
-  }
 }
 
 async function requestSandboxCompletion(prompt, { system, maxTokens } = {}) {
@@ -1998,7 +1732,7 @@ function applySandboxDialogueFontSize(source) {
 
 function saveSandboxPicture() {
   const picture = normalizeSandboxPicture({
-    taa: Boolean(field('sandboxTaaEnabled')?.checked),
+    ...applyPictureTaaToggle(readSandboxPicture(), Boolean(field('sandboxTaaEnabled')?.checked)),
     plateSharpen: Boolean(field('sandboxPlateSharpen')?.checked),
     dialogueFontSize: field('sandboxDialogueFontSize')?.value,
   });
@@ -2030,8 +1764,8 @@ function saveSandboxSettings() {
   });
   const status = field('sandboxPanelStatus');
   if (status) {
-    const chatText = next.baseUrl && next.model ? '闲聊 API 已保存在本机。' : '请填写闲聊 API 地址和模型。';
-    status.textContent = `${chatText}${fishTtsStatus(voice)}`;
+    const chatText = next.baseUrl && next.model ? '闲聊 API 已记下。' : '闲聊 API 未填写，之后再补也可以。';
+    status.textContent = `设置已保存在本机。${chatText}${fishTtsStatus(voice)}`;
   }
 }
 
@@ -2345,11 +2079,6 @@ field('sandboxStartIdols')?.addEventListener('click', (event) => {
   renderStartScreen();
 });
 field('sandboxStartBtn')?.addEventListener('click', () => { beginProduce(); });
-field('sandboxStartWeirdScriptBtn')?.addEventListener('click', enterWeirdScriptMode);
-field('sandboxWeirdScriptAutoBtn')?.addEventListener('click', (event) => {
-  event.stopPropagation();
-  toggleWeirdScriptAutoplay();
-});
 field('sandboxAreaBtn')?.addEventListener('click', openCurrentArea);
 field('sandboxOrderBtn')?.addEventListener('click', () => showOrderMenu('root'));
 field('sandboxOrderChoices')?.addEventListener('click', (event) => {
@@ -2386,7 +2115,7 @@ field('sandboxOrderDialog')?.addEventListener('click', (event) => {
   if (event.target === field('sandboxOrderDialog')) hideOrderDialog();
 });
 field('sandboxSaveSettingsBtn')?.addEventListener('click', saveSandboxSettings);
-field('sandboxSettingsHomeBtn')?.addEventListener('click', leaveWeirdScriptMode);
+field('sandboxSettingsHomeBtn')?.addEventListener('click', returnToStartScreen);
 ['sandboxApiBase', 'sandboxApiModel', 'sandboxApiKey', 'sandboxTtsEnabled', 'sandboxTtsProxy', 'sandboxTtsModel', 'sandboxTtsKey'].forEach((id) => {
   field(id)?.addEventListener('change', saveSandboxSettings);
 });
@@ -2421,39 +2150,8 @@ field('sandboxPresenceBtn')?.addEventListener('click', () => {
 field('sandboxPresenceClose')?.addEventListener('click', () => field('sandboxPresenceDialog')?.close());
 field('sandboxEventHook')?.addEventListener('click', () => showPanel('journal'));
 field('sandboxEventRetryBtn')?.addEventListener('click', () => retryDailyEvent());
-field('sandboxWeirdScriptBackBtn')?.addEventListener('click', leaveWeirdScriptMode);
-field('sandboxWeirdScriptGenerateBtn')?.addEventListener('click', () => { void generateWeirdScript(); });
-field('sandboxWeirdScriptContinueBtn')?.addEventListener('click', () => { void generateWeirdScript({ continuation: true }); });
-field('sandboxWeirdScriptEditorBtn')?.addEventListener('click', openBeatEditor);
-document.querySelectorAll('[data-weird-mode]').forEach((button) => {
-  button.addEventListener('click', () => {
-    if (weirdScriptBusy) return;
-    const selected = button.dataset.weirdMode;
-    weirdScriptMode = selected === WEIRD_SCRIPT_MODE.EXPAND
-      ? WEIRD_SCRIPT_MODE.EXPAND
-      : selected === WEIRD_SCRIPT_MODE.DIRECT
-        ? WEIRD_SCRIPT_MODE.DIRECT
-        : WEIRD_SCRIPT_MODE.FULL;
-    weirdScriptCompleted = '';
-    weirdScriptLastBackground = '';
-    setWeirdScriptStatus(weirdScriptModeCopy().status);
-    updateWeirdScriptControls();
-  });
-});
-field('sandboxWeirdScriptInput')?.addEventListener('input', () => {
-  if (weirdScriptBusy) return;
-  weirdScriptCompleted = '';
-  weirdScriptLastBackground = '';
-  updateWeirdScriptControls();
-});
-document.addEventListener('keydown', (event) => {
-  if (event.key !== 'Escape' || weirdScriptPage === 'idle') return;
-  event.preventDefault();
-  leaveWeirdScriptMode();
-});
 
 syncInlineChat();
-consumeBeatEditorResult();
 const opening = presenceOpening(state);
 const savedOrder = normalizeIdolOrder(state.idolOrder);
 if (opening.order.mode !== savedOrder.mode || opening.order.locationId !== savedOrder.locationId) {
@@ -2476,9 +2174,6 @@ if (produceRunStarted(state)) {
 
 window.hatsuSandboxHome = {
   app,
-  enterWeirdScriptMode,
-  leaveWeirdScriptMode,
-  generateWeirdScript,
   get state() { return state; },
   refresh() {
     state = readSandboxSave();

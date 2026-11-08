@@ -113,6 +113,40 @@ h2 { margin: 0; font-size: 20px; }
 .beat-scene-wipe.is-revealing .beat-scene-wipe-stripe { animation: beatSceneWipeReveal .4s cubic-bezier(.76, 0, .24, 1) forwards; animation-delay: calc(var(--i) * .04s); }
 @keyframes beatSceneWipeCover { from { transform: scaleX(0); transform-origin: left; } to { transform: scaleX(1); transform-origin: left; } }
 @keyframes beatSceneWipeReveal { from { transform: scaleX(1); transform-origin: right; } to { transform: scaleX(0); transform-origin: right; } }
+@property --clock-r { syntax: '<length>'; inherits: true; initial-value: 0px; }
+@property --clock-soft { syntax: '<length>'; inherits: true; initial-value: 0px; }
+.beat-clock-wipe { --clock-max: 1102px; --clock-unit: 10.8px; --clock-r: 0px; --clock-soft: 0px; position: absolute; z-index: 21; inset: 0; overflow: hidden; pointer-events: none; }
+.beat-clock-wipe[hidden] { display: none !important; }
+.beat-clock-wipe-cover { position: absolute; inset: 0; overflow: hidden; background: #31bfe7; -webkit-mask-image: radial-gradient(circle at 50% 50%, transparent calc(var(--clock-r) - var(--clock-soft)), #000 var(--clock-r)); mask-image: radial-gradient(circle at 50% 50%, transparent calc(var(--clock-r) - var(--clock-soft)), #000 var(--clock-r)); }
+.beat-clock-wipe-corner { position: absolute; width: calc(var(--clock-unit) * 12); height: calc(var(--clock-unit) * 12); background: #b3d7f2; }
+.beat-clock-wipe-corner.is-top { top: 0; left: 0; clip-path: polygon(0 0, 100% 0, 0 100%); }
+.beat-clock-wipe-corner.is-bottom { right: 0; bottom: 0; clip-path: polygon(100% 0, 100% 100%, 0 100%); }
+.beat-clock-wipe-clock { --clock: calc(var(--clock-unit) * 10); position: absolute; top: 50%; left: 50%; width: var(--clock); height: var(--clock); box-sizing: border-box; margin: calc(var(--clock) / -2) 0 0 calc(var(--clock) / -2); border: calc(var(--clock) * .075) solid #fff; border-radius: 50%; opacity: 0; transform: scale(0); }
+.beat-clock-wipe-hand { position: absolute; bottom: 50%; left: 50%; border-radius: 999px; background: #fff; transform-origin: 50% 100%; }
+.beat-clock-wipe-hand.is-minute { width: calc(var(--clock) * .07); height: calc(var(--clock) * .36); margin-left: calc(var(--clock) * -.035); animation: beatClockWipeSpin .62s linear infinite; }
+.beat-clock-wipe-hand.is-hour { width: calc(var(--clock) * .075); height: calc(var(--clock) * .24); margin-left: calc(var(--clock) * -.0375); animation: beatClockWipeSpin 2.5s linear infinite reverse; }
+.beat-clock-wipe-trail { position: absolute; inset: 14%; border-radius: 50%; background: conic-gradient(from -50deg, transparent, rgba(255, 255, 255, .5) 50deg, transparent 51deg); animation: beatClockWipeSpin .62s linear infinite; }
+.beat-clock-wipe.is-covering { animation: beatClockWipeClose .14s linear forwards; }
+.beat-clock-wipe.is-holding .beat-clock-wipe-clock { animation: beatClockWipeIn .1s cubic-bezier(.2, .9, .3, 1.25) .08s forwards; }
+.beat-clock-wipe.is-revealing { animation: beatClockWipeOpen .25s linear .12s both; }
+.beat-clock-wipe.is-revealing .beat-clock-wipe-clock { opacity: 1; transform: scale(1); animation: beatClockWipeOut .06s ease-in forwards; }
+@keyframes beatClockWipeClose {
+    0% { --clock-r: var(--clock-max); --clock-soft: 0px; }
+    15% { --clock-r: calc(var(--clock-max) * .5); --clock-soft: 0px; }
+    60% { --clock-r: calc(var(--clock-max) * .3); --clock-soft: calc(var(--clock-max) * .05); }
+    100% { --clock-r: 0px; --clock-soft: 0px; }
+}
+@keyframes beatClockWipeOpen {
+    0% { --clock-r: 0px; --clock-soft: 0px; }
+    40% { --clock-r: calc(var(--clock-max) * .05); --clock-soft: 0px; }
+    55% { --clock-r: calc(var(--clock-max) * .12); --clock-soft: calc(var(--clock-max) * .05); }
+    70% { --clock-r: calc(var(--clock-max) * .28); --clock-soft: calc(var(--clock-max) * .02); }
+    85% { --clock-r: calc(var(--clock-max) * .55); --clock-soft: 0px; }
+    100% { --clock-r: var(--clock-max); --clock-soft: 0px; }
+}
+@keyframes beatClockWipeIn { from { opacity: 1; transform: scale(.2); } to { opacity: 1; transform: scale(1); } }
+@keyframes beatClockWipeOut { from { opacity: 1; transform: scale(1); } to { opacity: 1; transform: scale(0); } }
+@keyframes beatClockWipeSpin { to { transform: rotate(360deg); } }
 .beat-stage canvas { z-index: 2; will-change: transform, opacity; }
 .stage-light { position: absolute; z-index: 1; width: 45%; height: 72%; border-radius: 50%; filter: blur(30px); opacity: .4; }
 .stage-light-left { top: -20%; left: -5%; background: #f8e9c7; transform: rotate(24deg); }
@@ -120,7 +154,8 @@ h2 { margin: 0; font-size: 20px; }
 .stage-floor { position: absolute; z-index: 1; right: -15%; bottom: -15%; left: -15%; height: 32%; border-top: 1px solid rgba(65, 100, 106, .14); background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(124, 161, 165, .22)), repeating-linear-gradient(90deg, transparent 0 46px, rgba(69, 110, 116, .1) 47px 48px), repeating-linear-gradient(0deg, transparent 0 46px, rgba(69, 110, 116, .1) 47px 48px); transform: perspective(300px) rotateX(52deg); transform-origin: top; }
 .stage-vignette { position: absolute; z-index: 4; inset: 0; pointer-events: none; box-shadow: inset 0 0 90px rgba(46, 78, 84, .12); }
 .beat-stage[data-background-kind="3d"] .stage-floor,
-.beat-stage[data-background-kind="3d"] .stage-light { display: none; }
+.beat-stage[data-background-kind="3d"] .stage-light,
+.beat-stage[data-background-kind="2d"][data-background]:not([data-background=""]) .stage-floor { display: none; }
 .story-chrome { position: absolute; z-index: 8; right: 0; bottom: 0; left: 0; padding: 0 14px 12px; pointer-events: none; }
 .story-chrome button, .story-chrome label { pointer-events: auto; }
 .dialogue-card { position: relative; margin: 18px 0 0; padding: 34px 36px 40px; border: 0; border-radius: 0; background: none; box-shadow: none; pointer-events: auto; }

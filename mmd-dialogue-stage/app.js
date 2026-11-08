@@ -1,5 +1,5 @@
 import { installAuditionEmbed, auditionParentOrigin } from './audition-embed.js?v=20261017-audition-origin-v3';
-import { loadResourceLibrary, ResourceSession } from './asset-runtime.js?v=20261103-fktn-profile-r2-v1';
+import { loadResourceLibrary, ResourceSession } from './asset-runtime.js?v=20261104-krnh-motion-index-v1';
 import { buildAuditionAssetPlan } from './dialogue-asset-plan.js';
 let auditionResources = null;
 import * as THREE from 'three';
@@ -14,14 +14,14 @@ import { MMDAnimationHelper } from 'three/addons/animation/MMDAnimationHelper.js
 import { OutlineEffect } from 'three/addons/effects/OutlineEffect.js?v=20261005-hair-outline-v1';
 import { EXPRESSION_PRESETS, MOTION_BUCKETS, MOTION_FADE, buildPlaylist, classifyClipTracks, classifyMotionName, findPresetMorph, indexMotionFiles, normalizeActionId, parsePerformanceCommand, playlistClipIds, sortPlaylistByCatalog, canKeepBodyForFace, fadeDurationForClip, fadeDurationForTransition, findIdlePlaylistIndex, findFacePlaylistIndex, findGesturePlaylistIndex, isIdleMotion, shouldLoopMotion } from './core.js?v=20261015-audition30-v1';
 import { LIBRARY_R2_KEY, LIBRARY_SOURCE_KEY, idolAssetUrls, libraryFileUrl, motionAssetUrls, motionAvailability, resolveLibrarySource, selectIdolModel, sourceLabel } from './library-client.js?v=20261017-browser-cache-v1';
-import { GAKUMAS_TEXTURE_KINDS, GAKUMAS_ACTIVE_TEXTURE_KINDS, selectMaterialTextures, textureDescriptor, textureUsesColorSpace, setTextureColorSpace } from './gakumas-materials.js?v=20261007-solo1-rampadd-v1';
-import { injectActorShader } from './gakumas-shader.js?v=20261004-key-view-v1';
+import { GAKUMAS_TEXTURE_KINDS, GAKUMAS_ACTIVE_TEXTURE_KINDS, gakumasLoadedTextureKinds, selectMaterialTextures, textureDescriptor, textureUsesColorSpace, setTextureColorSpace } from './gakumas-materials.js?v=20261105-face-layer-off-v1';
+import { injectActorShader } from './gakumas-shader.js?v=20261105-face-layer-off-v1';
 import { actorStencilState, classifyActorPass, placeCharacterShadowLight, shouldCastCharacterShadow, shouldReceiveCharacterShadow } from './gakumas-passes.js?v=20261024-crowd-budget-v1';
-import { HairCoverStage } from './gakumas-hair-cover.js?v=20261027-taa-outline-v1';
-import { GakumasSceneStage } from './gakumas-scene.js?v=20261028-block-boxes-v1';
-import { GakumasPostPass } from './gakumas-post.js?v=20261028-taa-supersample-v1';
+import { HairCoverStage } from './gakumas-hair-cover.js?v=20261105-face-layer-off-v1';
+import { GakumasSceneStage } from './gakumas-scene.js?v=20261105-light-range-v1';
+import { GakumasPostPass } from './gakumas-post.js?v=20261105-floor-ssr-v1';
 import { motionFromPositions } from './gakumas-taa-motion.js?v=20261027-motion-aware-taa-v1';
-import { GAKUMAS_LOOK, GakumasLookPass, applyGakumasLookUniforms, createGakumasLookUniformValues, matcapKeyDirection } from './gakumas-look.js?v=20261004-key-az60-v1';
+import { ACTOR_ADDITIONAL_LIGHTS, GAKUMAS_LOOK, GakumasLookPass, actorEnvironmentSample, actorScenePoint, applyGakumasLookUniforms, applySceneActorUniforms, createActorRoomUniforms, createGakumasLookUniformValues, matcapKeyDirection } from './gakumas-look.js?v=20261105-capture-gap-v1';
 import { hasGakumasVertexColorAttribute } from './gakumas-outline.js?v=20260929-packed-color';
 import { FacialEffectsStage } from './facial-effects-stage.js?v=20261017-browser-cache-v1';
 import { SecondaryMotion, applyHairRestRotationRebase, rebaseHairAnimationTracks, refreshRestInverseBinds } from './gakumas-secondary-motion.js?v=20261102-krnh-sleeve-gravity-v1';
@@ -29,6 +29,7 @@ import { buildStageBoneTraceFrame, createStageBoneTrace } from './stage-bone-tra
 import { identifyLibraryIdol, supportsSecondaryMotion, motionMatchesIdol } from './idol-library.js?v=20260912-all-idols';
 import { bindVisemeMorphs, estimateVisemeTrack, faceCueLabel, gestureCueLabel, isFacialNoiseMorph, parseAiCue, restoreVisemeInfluences, shouldClearFacialNoise, snapshotVisemeInfluences, visemeWeightAt, allVisemeBindingTargets, visemeBindingTargets } from './dialogue-intent.js?v=20261011-emotion-cue-labels-v2';
 import { filterPreferredSitItems } from './seated-posture.js?v=20261027-seated-rollback-v1';
+import { phonePropForIdol, propVisibilityForCue, resolvePropAnchorName } from './stage-props.js';
 
 const $ = selector => document.querySelector(selector);
 const state = {
@@ -56,6 +57,8 @@ const state = {
     gltf: null,
     animationTarget: null,
     animationMixer: null,
+    props: new Map(),
+    propLoadPromise: null,
     skeletonBones: [],
     textureFiles: [],
     activeAction: '',
@@ -78,7 +81,7 @@ const state = {
     gakumasHeadRight: new THREE.Vector3(1, 0, 0),
     gakumasLightDirection: new THREE.Vector3(),
     gakumasDebugView: 0,
-    gakumasPasses: { characterShadow: true, hairCover: true, hairCoverMinimum: 0.35 },
+    gakumasPasses: { characterShadow: true, hairCover: true, hairCoverMinimum: 0.35, faceLayer: false },
     outline: { color: '#000000', alpha: 0.82, thickness: 0.004 },
 };
 
@@ -319,7 +322,7 @@ const secondaryMotionReady = (profileKey, fallbackId = '') => {
     }
     const key = profileKey || fallbackId || 'fallback';
     if (secondaryMotionTables.has(key)) return secondaryMotionTables.get(key);
-        const request = fetch(`./secondary-motion-manifest.json?v=20261026-hair-contact-v1`)
+        const request = fetch(`./secondary-motion-manifest.json?v=20261104-krnh-casl-v1`)
         .then(response => response.ok ? response.json() : null)
         .catch(() => null)
         .then(manifest => {
@@ -328,7 +331,7 @@ const secondaryMotionReady = (profileKey, fallbackId = '') => {
             const profileUrl = entry?.profile
                 ? `./${String(entry.profile).replace(/^\.\//, '')}`
                 : `./secondary-motion-profiles/${encodeURIComponent(fallbackId || profileKey || 'fktn')}.json`;
-            return fetch(`${profileUrl}?v=20261102-krnh-sleeve-gravity-v1`)
+            return fetch(`${profileUrl}?v=20261104-krnh-casl-v1`)
                 .then(response => response.ok ? response.json() : fetch(`./gakumas-secondary-motion.json?v=20261006-nasr-casl-hair-profile-v1`).then(fallback => {
                     if (!fallback.ok) throw new Error(fallback.statusText);
                     return fallback.json();
@@ -630,6 +633,17 @@ function bindUi() {
     $('#gakumasHairCover').addEventListener('change', event => {
         state.gakumasPasses.hairCover = event.target.checked;
     });
+    $('#gakumasFaceLayer').addEventListener('change', async event => {
+        state.gakumasPasses.faceLayer = event.target.checked;
+        if (!state.gakumasTextureFiles?.length) {
+            renderGakumasInspector();
+            return;
+        }
+        await loadGakumasTextures(state.gakumasTextureFiles);
+        applyMaterialStyle();
+        updateGakumasUniforms();
+        renderGakumasInspector();
+    });
     const facialEffectInputs = {
         facialStarEyes: ['starEyes', value => value],
         facialNoHighlight: ['noHighlight', value => value],
@@ -824,6 +838,7 @@ function updateGakumasUniforms() {
     hairCoverStage.update(axisSource, state.gakumasPasses.hairCoverMinimum);
     if (axisSource) state.gakumasHeadRight.setFromMatrixColumn(axisSource.matrixWorld, 0).normalize();
     const characterShadow = placeCharacterShadowLight(characterShadowLight, camera, characterShadowFit);
+    const roomSample = sceneStage.sidecar ? actorEnvironmentSample(sceneStage, actorScenePoint(state.model, sceneStage)) : null;
     state.gakumasUniforms.forEach(uniforms => {
         uniforms.gkLightDirection.value.copy(direction);
         uniforms.gkLightColor.value.copy(keyLight.color);
@@ -837,7 +852,9 @@ function updateGakumasUniforms() {
         uniforms.gkCharacterShadowMap.value = characterShadowLight.shadow.map?.texture || null;
         uniforms.gkCharacterShadowMatrix.value.copy(characterShadowLight.shadow.matrix);
         uniforms.gkCharacterShadowContact.value = characterShadow?.contact || 0.001;
+        uniforms.gkCharacterShadowSize.value = characterShadowLight.shadow.map?.width || characterShadowLight.shadow.mapSize.x || 4096;
         applyGakumasLookUniforms(uniforms, { ...GAKUMAS_LOOK, shadowFloor: state.shadowFloor });
+        applySceneActorUniforms(uniforms, sceneStage.sidecar ? sceneStage : null, roomSample);
     });
 }
 
@@ -885,6 +902,74 @@ async function loadModelFiles(files) {
         idolId: '',
         format: 'pmx',
     });
+}
+
+async function loadStagePhoneProp(idolId = state.library.activeIdol) {
+    const definition = phonePropForIdol(idolId);
+    if (!definition || !state.model || state.modelFormat !== 'glb') return false;
+    if (state.props.has(definition.id)) return true;
+    if (state.propLoadPromise) return state.propLoadPromise;
+    state.propLoadPromise = (async () => {
+        const sourceUrl = new URL(definition.local, import.meta.url).href;
+        const manager = auditionResources?.manager(THREE) || new THREE.LoadingManager();
+        const loaded = await new GLTFLoader(manager).loadAsync(sourceUrl);
+        const root = loaded?.scene;
+        if (!root) return false;
+        const boneNames = [];
+        state.model.traverse(child => { if (child.isBone) boneNames.push(child.name); });
+        const anchorName = resolvePropAnchorName(boneNames, definition.anchorNames);
+        const anchor = anchorName ? state.model.getObjectByName(anchorName) : null;
+        if (!anchor) return false;
+        root.name = `stage-prop-${definition.id}`;
+        root.position.fromArray(definition.offset || [0, 0, 0]);
+        root.rotation.fromArray(definition.rotation || [0, 0, 0]);
+        root.scale.setScalar(Number(definition.scale) || 1);
+        root.visible = false;
+        root.traverse(child => {
+            if (!child.isMesh) return;
+            child.castShadow = true;
+            child.receiveShadow = true;
+        });
+        anchor.add(root);
+        state.props.set(definition.id, { definition, root, anchor, anchorName });
+        return true;
+    })().catch(error => {
+        console.warn('[MMD Stage] phone prop unavailable', idolId, error);
+        return false;
+    }).finally(() => { state.propLoadPromise = null; });
+    return state.propLoadPromise;
+}
+
+function setStagePropVisibility(propId, visible) {
+    const entry = state.props.get(String(propId || ''));
+    if (!entry?.root) return false;
+    entry.root.visible = Boolean(visible);
+    return true;
+}
+
+function applyStagePropCue(item) {
+    const token = typeof item === 'string'
+        ? item
+        : [item?.stem, item?.key, item?.label, item?.title, item?.catalog?.title].find(Boolean) || '';
+    const visibility = propVisibilityForCue(token);
+    if (visibility === null) return false;
+    return setStagePropVisibility('phone', visibility);
+}
+
+function disposeStageProps() {
+    for (const { root } of state.props.values()) {
+        root.removeFromParent();
+        root.traverse(child => {
+            child.geometry?.dispose?.();
+            const materials = Array.isArray(child.material) ? child.material : [child.material];
+            materials.filter(Boolean).forEach(material => {
+                Object.values(material).forEach(value => { if (value?.isTexture) value.dispose(); });
+                material.dispose?.();
+            });
+        });
+    }
+    state.props.clear();
+    state.propLoadPromise = null;
 }
 
 async function loadModelFromSource({ name, url, textures, fileMapFiles, idolId, modelKey = '', format = 'pmx' }) {
@@ -975,6 +1060,7 @@ async function loadModelFromSource({ name, url, textures, fileMapFiles, idolId, 
             stopAdditiveMotion({ render: false });
             hairCoverStage.dispose();
             facialEffects.disposeRuntime();
+            disposeStageProps();
             const oldTarget = state.animationTarget || state.model;
             if (state.helper.objects.has(oldTarget)) state.helper.remove(oldTarget);
             state.animationMixer = null;
@@ -989,6 +1075,7 @@ async function loadModelFromSource({ name, url, textures, fileMapFiles, idolId, 
         // preset and bypasses the actor shader entirely.
         if (format === 'glb') applyRenderPreset('gakumas');
         state.library.activeIdol = idolId || identifyLibraryIdol(state.library.config, name)?.id || (/hski/i.test(name) ? 'hski' : '');
+        await loadStagePhoneProp(state.library.activeIdol);
         state.gakumasHeadBone = null;
         model.traverse(child => {
             if (!state.gakumasHeadBone && child.isBone && /^(?:head|頭|頭部)$/i.test(child.name)) state.gakumasHeadBone = child;
@@ -1291,7 +1378,7 @@ function applyMaterialStyle() {
             // preset/material rebuild gives the face effect the fresh shader
             // callback instead of retaining the previous render preset.
             material.userData.facialBlackFaceWrapper = false;
-            material.customProgramCacheKey = () => `gakumas-v2:${state.materialMode}:${role}:rim-v1`;
+            material.customProgramCacheKey = () => `gakumas-v2:${state.materialMode}:${role}:face-layer-off-v1`;
             material.needsUpdate = true;
             material.visible = material.userData.gakumasPostHighlightOnly !== true;
             if (state.materialMode === 'gakumas') {
@@ -1331,7 +1418,7 @@ function createGlbHairHighlightOverlay(source) {
     const overlay = source.clone();
     overlay.name = `${source.name || 'm_hir+'}:GLBOverlay`;
     overlay.onBeforeCompile = source.onBeforeCompile;
-    overlay.customProgramCacheKey = () => 'gakumas-glb-hair-highlight-actor-v1';
+    overlay.customProgramCacheKey = () => 'gakumas-glb-hair-highlight-actor-v4';
     overlay.defines = { ...(source.defines || {}) };
     overlay.toneMapped = true;
     overlay.transparent = true;
@@ -1391,7 +1478,9 @@ function applyStencilState(material, state) {
 }
 
 async function loadGakumasTextures(files) {
+    state.gakumasTextureFiles = files;
     const generation = ++gakumasTextureLoadGeneration;
+    const loadKinds = new Set(gakumasLoadedTextureKinds({ faceLayer: state.gakumasPasses.faceLayer }));
     const uniqueFiles = new Map();
     for (const file of files) {
         const name = file.name || file.file?.name || '';
@@ -1402,7 +1491,7 @@ async function loadGakumasTextures(files) {
     }
     const entries = [];
     for (const entry of uniqueFiles.values()) {
-        if (GAKUMAS_ACTIVE_TEXTURE_KINDS.includes(entry.kind)) {
+        if (loadKinds.has(entry.kind)) {
             const url = entry.url || createObjectUrl(entry.file);
             try {
                 entry.texture = await new THREE.TextureLoader(auditionResources?.manager(THREE)).loadAsync(url);
@@ -1460,6 +1549,19 @@ function createGakumasUniforms() {
         gkLightDirection: { value: new THREE.Vector3(0.3, 0.6, 0.7) },
         gkLightColor: { value: new THREE.Color(0xffffff) },
         gkLightStrength: { value: GAKUMAS_LOOK.key },
+        gkMainLightWorld: { value: 0 },
+        gkWorldToScene: { value: new THREE.Matrix4() },
+        gkAddLightCount: { value: 0 },
+        gkAddLightPosition: { value: Array.from({ length: ACTOR_ADDITIONAL_LIGHTS }, () => new THREE.Vector4()) },
+        gkAddLightDirection: { value: Array.from({ length: ACTOR_ADDITIONAL_LIGHTS }, () => new THREE.Vector4(0, -1, 0, 1)) },
+        gkAddLightColor: { value: Array.from({ length: ACTOR_ADDITIONAL_LIGHTS }, () => new THREE.Vector3()) },
+        gkAddLightParams: { value: Array.from({ length: ACTOR_ADDITIONAL_LIGHTS }, () => new THREE.Vector4(0, 0, 1, -1)) },
+        gkAddLightScale: { value: 0 },
+        gkAddLightSpecularScale: { value: 1 },
+        gkMatCapOffset: { value: 0.3 },
+        gkShadeApply: { value: 1 },
+        gkEyeHighlightColor: { value: new THREE.Color(0xffffff) },
+        gkEyeReflectionColor: { value: new THREE.Color(0xffffff) },
         gkShadowStrength: { value: GAKUMAS_LOOK.shadow },
         gkHeadRight: { value: new THREE.Vector3(1, 0, 0) },
         gkRimDirection: { value: new THREE.Vector3(...GAKUMAS_LOOK.rimView) },
@@ -1473,7 +1575,9 @@ function createGakumasUniforms() {
         gkCharacterShadowEnabled: { value: 0 },
         gkCharacterShadowReceive: { value: 1 },
         gkCharacterShadowContact: { value: 0.001 },
+        gkCharacterShadowSize: { value: 4096 },
         gkHairFadeParam: { value: new THREE.Vector4(0.15, 4.0, 0.3, 2.0) },
+        ...createActorRoomUniforms(),
         ...createGakumasLookUniformValues(),
     };
 }
@@ -1489,7 +1593,12 @@ function renderGakumasInspector() {
             for (const kind of GAKUMAS_TEXTURE_KINDS) {
                 const entry = selection.bindings[kind];
                 const pending = !GAKUMAS_ACTIVE_TEXTURE_KINDS.includes(kind);
-                const status = selection.ambiguous.includes(kind) ? '存在重名冲突，未绑定' : entry?.error ? '读取失败，使用回退' : entry ? `${entry.name}${pending ? '（已找到，算法待接入）' : ''}` : pending ? '未找到' : '未找到，使用回退';
+                let status = selection.ambiguous.includes(kind) ? '存在重名冲突，未绑定' : entry?.error ? '读取失败，使用回退' : entry ? `${entry.name}${pending ? '（已找到，算法待接入）' : ''}` : pending ? '未找到' : '未找到，使用回退';
+                if (kind === 'layer' && !selection.ambiguous.includes(kind)) {
+                    status = entry
+                        ? `${entry.name}${state.gakumasPasses.faceLayer ? '（已加载，叠加未启用）' : '（默认隐藏，未加载）'}`
+                        : '未找到';
+                }
                 lines.push(`${kind}：${status}`);
             }
             rows.push(lines.join('\n'));
@@ -1499,6 +1608,7 @@ function renderGakumasInspector() {
     $('#gakumasHeadStatus').textContent = state.gakumasHeadBone ? `脸部朝向跟随：${state.gakumasHeadBone.name}` : '未找到 Head／頭 骨骼；脸部朝向暂跟随模型。';
     if ($('#gakumasCharacterShadow')) $('#gakumasCharacterShadow').checked = state.gakumasPasses.characterShadow;
     if ($('#gakumasHairCover')) $('#gakumasHairCover').checked = state.gakumasPasses.hairCover;
+    if ($('#gakumasFaceLayer')) $('#gakumasFaceLayer').checked = state.gakumasPasses.faceLayer;
     $('#gakumasHairCoverStatus').textContent = `HairCover：${hairCoverStage.entries.reduce((count, entry) => count + entry.groups.length, 0)} 个 m_hir 面组就绪；m_hir+ 高光在 HairCover 后补绘。`;
     const shadowStatus = $('#gakumasCharacterShadowStatus');
     if (shadowStatus) shadowStatus.textContent = '角色阴影：4K 深度图，光源跟摄像机。脸、眼睛和高光层不写入；头发、身体和衣服写入，并在脸、眼睛、头发、身体和衣服上采样。';
@@ -2818,6 +2928,7 @@ function playPlaylistIndex(index, options = {}) {
     state.activeClipIds = clipIds;
     state.playing = options.autoplay !== false;
     state.playGeneration += 1;
+    applyStagePropCue(item);
 
     if (!loop) attachClipFinished(mixer, clips.map(entry => entry.clip), item, state.playGeneration);
 

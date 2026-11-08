@@ -1,11 +1,12 @@
 import { findIdlePlaylistIndex, indexMotionFiles, isIdleMotion } from './core.js';
 import { motionAssetUrls, motionAvailability } from './library-client.js';
 import { idolCostumeVariant } from './beat-costumes.js';
-import { parsePortraitCue, selectPortraitPerformance } from './portrait-cues.js';
+import { parsePortraitCue, selectPortraitPerformance } from './portrait-cues.js?v=20261103-paired-face-v1';
 import { SCENE_IDOLS } from './scene-protocol.js';
 import { textureDescriptor, GAKUMAS_ACTIVE_TEXTURE_KINDS } from './gakumas-materials.js';
 import { isBeatScene, resolveBeatBackgroundAsset } from './beat-background-assets.js';
 import { STAR_EYE_RESOURCES } from './star-eye-resources.js';
+import { propAssetKeysForIdol } from './stage-props.js';
 
 export function resourceCatalog(map) {
     return (map?.buckets || []).flatMap(bucket => (bucket.families || []).flatMap(family => (family.items || []).map(item => ({
@@ -68,6 +69,7 @@ export function buildDialogueAssetPlan(compiled, preload, library, { random, pre
             if (!idol) throw new Error(`角色服装未配置：${id}/${costume}`);
             const prefix = config.packs[idol.pack].r2Prefix || idol.pack;
             add(`${prefix}/${idol.model}`);
+            propAssetKeysForIdol(id).forEach(add);
             for (const file of manifest.status.packs[idol.pack].files) {
                 if (/\.(png|jpe?g|webp)$/i.test(file) && GAKUMAS_ACTIVE_TEXTURE_KINDS.includes(textureDescriptor(file).kind)) add(`${prefix}/${file}`);
             }
@@ -76,7 +78,8 @@ export function buildDialogueAssetPlan(compiled, preload, library, { random, pre
             add(profile?.profile || `secondary-motion-profiles/${id}.json`);
         }
         add('secondary-motion-manifest.json');
-        const eligible = catalog.filter(item => ['cmmn', id].includes(item.character) && motionAvailability(item, index).ready);
+        const ready = catalog.filter(item => motionAvailability(item, index).ready);
+        const eligible = ready.filter(item => ['cmmn', id].includes(item.character));
         const idleIndex = findIdlePlaylistIndex(eligible, id);
         let idle = idleIndex >= 0 ? eligible[idleIndex] : null;
         // Idols without a standing idle, such as krnh, keep the dialogue pose
@@ -97,7 +100,9 @@ export function buildDialogueAssetPlan(compiled, preload, library, { random, pre
         for (const speaker of [...new Set([...(cuesById[id] || []), `${names[id]}(待机)`])]) {
             let cue = parsePortraitCue(speaker, 'dialogue', id);
             if (!cue || cue.mode === 'keep') cue = parsePortraitCue(`${names[id]}(待机)`, 'dialogue', id);
-            let item = selectPortraitPerformance(cue, eligible, id, { random }) || (id === 'nasr' ? idle : null);
+            // An explicit filename may belong to another idol. Named cues stay on this idol plus shared motions.
+            const pool = cue?.mode === 'file' || cue?.faceFile ? ready : eligible;
+            let item = selectPortraitPerformance(cue, pool, id, { random }) || (id === 'nasr' ? idle : null);
             // The global cue vocabulary includes character-exclusive actions.
             // Pin a real idle for an unavailable cue, so preparation and playback
             // agree instead of retrying the same impossible selection forever.

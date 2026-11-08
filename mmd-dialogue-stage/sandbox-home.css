@@ -620,7 +620,7 @@ body.sandbox-home-page {
   padding: 12px 16px;
   cursor: pointer;
 }
-.sandbox-start-weird-script {
+.sandbox-start-player-link {
   justify-self: center;
   border: 1px solid rgba(169, 101, 36, .35);
   border-radius: 999px;
@@ -630,6 +630,7 @@ body.sandbox-home-page {
   font: inherit;
   font-size: 13px;
   font-weight: 800;
+  text-decoration: none;
   cursor: pointer;
 }
 
@@ -797,105 +798,3 @@ body.sandbox-home-page {
 }
 .sandbox-home-app.is-desktop-layout .sandbox-travel-card { width: min(420px, calc(100% - 56px)); }
 .sandbox-home-app.is-desktop-layout .sandbox-phone-bezel { width: min(420px, 45vw); height: min(760px, 88vh); }
-
-/* Weird-script mode: keep the Beat stage visible while replacing the sandbox HUD with a focused writer. */
-.sandbox-weird-script-view {
-  position: absolute;
-  z-index: 94;
-  top: 50%;
-  left: 50%;
-  width: min(560px, calc(100% - 28px));
-  display: grid;
-  gap: 10px;
-  padding: 16px;
-  transform: translate(-50%, -50%);
-  border: 1px solid rgba(255,255,255,.78);
-  border-radius: 22px;
-  color: #332820;
-  background: rgba(255, 249, 239, .94);
-  box-shadow: 0 18px 40px rgba(54, 35, 23, .25);
-  backdrop-filter: blur(16px);
-}
-.sandbox-weird-script-view[hidden] { display: none; }
-.sandbox-weird-script-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.sandbox-weird-script-heading small { color: rgba(113, 77, 45, .7); font-size: 9px; font-weight: 900; letter-spacing: .16em; }
-.sandbox-weird-script-heading h2 { margin: 3px 0 0; font-size: 20px; }
-.sandbox-weird-script-heading p { margin: 5px 0 0; color: #8a7159; font-size: 11px; line-height: 1.45; }
-.sandbox-weird-script-heading button,
-.sandbox-weird-script-actions button,
-.sandbox-weird-script-modes button { border: 0; border-radius: 999px; color: #fff; background: #a9661e; font: inherit; font-weight: 800; cursor: pointer; }
-.sandbox-weird-script-heading button { padding: 8px 12px; background: rgba(86, 72, 62, .78); font-size: 12px; }
-.sandbox-weird-script-modes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
-.sandbox-weird-script-modes button { min-height: 34px; color: #87532c; background: rgba(235, 218, 193, .9); font-size: 12px; }
-.sandbox-weird-script-modes button[aria-pressed="true"] { color: #fff; background: var(--sandbox-coral); }
-.sandbox-weird-script-view textarea { width: 100%; min-height: 130px; resize: vertical; padding: 11px 12px; border: 1px solid rgba(137, 101, 69, .25); border-radius: 13px; color: #34291f; background: rgba(255,255,255,.78); font: inherit; font-size: 13px; line-height: 1.55; box-sizing: border-box; }
-.sandbox-weird-script-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.sandbox-weird-script-actions button { min-height: 38px; padding: 0 16px; font-size: 13px; }
-.sandbox-weird-script-actions button:disabled { opacity: .5; cursor: wait; }
-.sandbox-weird-script-actions button:nth-child(2) { color: #805b37; background: #f1ddc3; }
-.sandbox-weird-script-actions button:nth-child(3) { color: #145861; background: #dceff0; }
-.sandbox-weird-script-status { min-height: 18px; margin: 0; color: #7c5a3e; font-size: 11px; line-height: 1.45; }
-
-.sandbox-home-app.is-weird-script-mode .sandbox-topbar,
-.sandbox-home-app.is-weird-script-mode .sandbox-scene-label,
-.sandbox-home-app.is-weird-script-mode .sandbox-banner,
-.sandbox-home-app.is-weird-script-mode .sandbox-event-hook,
-.sandbox-home-app.is-weird-script-mode .sandbox-side-actions,
-.sandbox-home-app.is-weird-script-mode .sandbox-idol-card,
-.sandbox-home-app.is-weird-script-mode .sandbox-corner-actions,
-.sandbox-home-app.is-weird-script-mode .sandbox-bottom-nav,
-.sandbox-home-app.is-weird-script-mode .sandbox-produce-board,
-.sandbox-home-app.is-weird-script-mode .sandbox-panel,
-.sandbox-home-app.is-weird-script-mode .sandbox-phone,
-.sandbox-home-app.is-weird-script-mode .sandbox-travel-dialog { visibility: hidden; pointer-events: none; }
-.sandbox-home-app.is-weird-script-mode .sandbox-story-chrome { opacity: 1; pointer-events: none; }
-.sandbox-home-app.is-weird-script-mode .sandbox-story-chrome .sandbox-dialogue-stack,
-.sandbox-home-app.is-weird-script-mode .sandbox-story-chrome .dialogue-card { pointer-events: auto; }
-.sandbox-home-app.is-weird-script-mode .sandbox-stage-commands,
-.sandbox-home-app.is-weird-script-mode .sandbox-live-chat,
-.sandbox-home-app.is-weird-script-mode .sandbox-player-toolbar { visibility: hidden; pointer-events: none; }
-.sandbox-home-app.is-weird-script-mode .sandbox-weird-script-view { pointer-events: auto; }
-.sandbox-home-app.is-weird-script-mode .sandbox-dialogue-stack { bottom: 12%; }
-
-/* The writer is entered from the idol-selection screen, so it owns the whole
-   app surface instead of sitting on top of the ordinary home HUD. */
-.sandbox-home-app.is-weird-script-compose-mode > *:not(#sandboxWeirdScriptView) { visibility: hidden; pointer-events: none; }
-.sandbox-home-app.is-weird-script-compose-mode #sandboxWeirdScriptView { visibility: visible; pointer-events: auto; }
-
-/* Playback deliberately leaves only the Beat dialogue card on a quiet page.
-   The BeatPlayerApp still drives the card, TTS and next-page interaction. */
-.sandbox-home-app.is-weird-script-playback-mode > *:not(.sandbox-stage-wrap) { visibility: hidden; pointer-events: none; }
-.sandbox-home-app.is-weird-script-playback-mode .sandbox-stage-wrap,
-.sandbox-home-app.is-weird-script-playback-mode .sandbox-stage { visibility: visible; background: #fff4e0; }
-.sandbox-home-app.is-weird-script-playback-mode .sandbox-stage > *:not(.sandbox-story-chrome) { visibility: hidden; pointer-events: none; }
-.sandbox-home-app.is-weird-script-playback-mode .sandbox-stage > .beat-background,
-.sandbox-home-app.is-weird-script-playback-mode .sandbox-stage > canvas { visibility: visible; }
-.sandbox-home-app.is-weird-script-playback-mode .sandbox-story-chrome { visibility: visible; opacity: 1; pointer-events: auto; }
-.sandbox-home-app.is-weird-script-playback-mode .sandbox-dialogue-stack { left: 50%; bottom: 9%; width: min(860px, calc(100% - 32px)); pointer-events: auto; }
-.sandbox-weird-auto { display: none; position: absolute; z-index: 3; top: -12px; right: 14px; min-height: 28px; padding: 4px 12px; border: 0; border-radius: 999px; color: #fff; background: rgba(76, 67, 58, .82); font-size: 12px; font-weight: 700; cursor: pointer; }
-.sandbox-weird-auto[aria-pressed="true"] { background: #a9661e; }
-.sandbox-home-app.is-weird-script-playback-mode .sandbox-weird-auto { display: inline-flex; align-items: center; }
-.sandbox-home-app.is-weird-script-playback-mode .sandbox-dialogue-card { min-height: 138px; border-radius: 24px; background: rgba(255, 253, 247, .9); backdrop-filter: blur(12px) saturate(1.05); -webkit-backdrop-filter: blur(12px) saturate(1.05); }
-    .sandbox-home-app.is-weird-script-playback-mode .sandbox-dialogue-card p { margin: 16px 38px 22px 20px; font-size: var(--sandbox-dialogue-font-size, 23px); line-height: 1.7; }
-.sandbox-home-app.is-weird-script-playback-mode .sandbox-stage-commands,
-.sandbox-home-app.is-weird-script-playback-mode .sandbox-live-chat,
-.sandbox-home-app.is-weird-script-playback-mode .sandbox-player-toolbar { visibility: hidden; pointer-events: none; }
-
-@media (min-width: 761px) and (orientation: landscape) {
-  .sandbox-home-app.is-desktop-layout .sandbox-weird-script-view { top: 50%; width: min(680px, 52vw); }
-  .sandbox-home-app.is-weird-script-mode .sandbox-dialogue-stack { bottom: 8%; width: min(960px, 72%); }
-      .sandbox-home-app.is-desktop-layout.is-weird-script-playback-mode .sandbox-dialogue-stack {
-        bottom: 2%;
-        width: min(1500px, calc(100% - 220px));
-      }
-      .sandbox-home-app.is-desktop-layout.is-weird-script-playback-mode .sandbox-dialogue-card p {
-        font-size: var(--sandbox-dialogue-font-size, 23px);
-      }
-}
-
-@media (max-width: 520px) {
-  .sandbox-weird-script-view { top: 50%; width: calc(100% - 20px); padding: 13px; border-radius: 18px; }
-  .sandbox-weird-script-view textarea { min-height: 116px; }
-  .sandbox-home-app.is-weird-script-mode .sandbox-dialogue-stack { bottom: 10%; width: calc(100% - 20px); }
-  .sandbox-home-app.is-weird-script-playback-mode .sandbox-dialogue-card p { margin: 14px 30px 18px 16px; font-size: 14px; }
-}

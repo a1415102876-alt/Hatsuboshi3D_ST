@@ -269,6 +269,8 @@
             </select>
             <label class="gakumas-toggle"><input id="gakumasCharacterShadow" type="checkbox" checked><span>启用角色阴影（4K，跟摄像机）</span></label>
             <label class="gakumas-toggle"><input id="gakumasHairCover" type="checkbox" checked><span>启用眉眼半透（HairCover）</span></label>
+            <label class="gakumas-toggle"><input id="gakumasFaceLayer" type="checkbox"><span>加载脸部图层（默认隐藏）</span></label>
+            <p class="hint">fce_lyr 平时不读入。勾选后只把贴图放进绑定表，左右对半的叠加方式不正确，所以不会画到脸上。</p>
             <label class="light-row"><span>正面最低覆盖（补偿）</span><input id="gakumasHairCoverMinimum" type="range" min="0" max="1" step="0.01" value="0.35"><output id="gakumasHairCoverMinimumValue">0.35</output></label>
             <p class="hint">关闭时保留原有眉眼全透。补偿设为 0 使用示例视角公式；当前琴音贴图 A 全白，正面覆盖可能接近 0。补偿不是游戏原始参数。</p>
             <p id="gakumasHeadStatus"></p>
@@ -339,7 +341,7 @@
   <div id="toastStack" class="toast-stack" aria-live="polite"></div>
   <script src="./picker-bootstrap.js"></script>
   <script type="module">
-      import('./app.js?v=20261103-fktn-profile-r2-v1').catch(function (error) {
+      import('./app.js?v=20261105-floor-ssr-v1').catch(function (error) {
       console.error('[MMD Stage] 运行库启动失败', error);
       var status = document.getElementById('statusText');
       var badge = document.getElementById('runtimeBadge');

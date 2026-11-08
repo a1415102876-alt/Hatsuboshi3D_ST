@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { applyRootTransform, beatUsesStageDefaultPlacement, decalUv, layoutCameraView, linearColor, pickLayoutActor, reflectionProbeBox, resolveBeatSceneCameraOptions, resolveVolumeStack, retreatCameraView, sceneEffectProfile, sceneFogWithOverride, sceneGrade, sceneLayoutOptions, scenePost, sceneSphereFog, sceneLightData, sceneRootTransform, selectReflectionProbe, shCoefficients, validateSceneSidecar } from './gakumas-scene-core.js?v=20261028-stage-default-v1';
+import { applyRootTransform, beatUsesStageDefaultPlacement, decalUv, layoutCameraView, linearColor, pickLayoutActor, reflectionProbeBox, resolveBeatSceneCameraOptions, resolveVolumeStack, retreatCameraView, sceneEffectProfile, sceneFogWithOverride, sceneGrade, sceneLayoutOptions, scenePost, sceneSphereFog, sceneActorLight, sceneLightData, sceneRootTransform, selectReflectionProbe, shCoefficients, validateSceneSidecar } from './gakumas-scene-core.js?v=20261105-light-range-v1';
 import { calibratedBeatLayout, defaultSceneLayoutId, withScenePlacementOverrides } from './scene-placement-overrides.js?v=20261027-calibrated-beat-v1';
 import { activityForScene, checkAnchorPlan, nearestSafePoint, pathIsClear, validateActivity } from './scene-activity.js?v=20261028-block-boxes-v1';
 import { createSceneEffects } from './gakumas-scene-effects.js?v=20261028-hot-spring-v1';
@@ -329,9 +329,12 @@ void main() {
             vec3 toLight = lp.xyz - vGkPosition;
             float distanceSqr = max(dot(toLight, toLight), 1e-4);
             l = toLight * inversesqrt(distanceSqr);
-            float factor = distanceSqr * params.x;
-            float smoothFactor = clamp(1.0 - factor * factor, 0.0, 1.0);
-            attenuation = smoothFactor * smoothFactor / distanceSqr;
+            float lightRange = inversesqrt(max(params.x, 0.0001));
+            float lightDistance = sqrt(distanceSqr);
+            float lightT = clamp(lightDistance / lightRange, 0.0, 1.0);
+            float lightEdge = clamp((lightT - 0.35) / 0.65, 0.0, 1.0);
+            lightEdge = lightEdge * lightEdge * (3.0 - 2.0 * lightEdge);
+            attenuation = (1.0 - lightEdge) * 0.08;
             if (lp.w > 1.5) {
                 float cone = clamp(dot(gkLightDirection[i].xyz, -l) * params.y + params.z, 0.0, 1.0);
                 attenuation *= cone * cone;
@@ -486,6 +489,8 @@ export class GakumasSceneStage {
         this.sky = null;
         this.farDistance = 0;
         this.grade = null;
+        this.actorLight = null;
+        this.sceneLightEntries = [];
         this.shared = {
             gkSceneFromWorld: { value: new THREE.Matrix3() },
             gkExposure: { value: 1 },
@@ -942,6 +947,7 @@ export class GakumasSceneStage {
         const { stack, volumes, activeComponents } = resolveVolumeStack(this.sidecar.volumes, layout.camera?.position || actor?.position || [0, 0, 0]);
         const fog = sceneFogWithOverride(sceneSphereFog(stack), sceneEffectProfile(this.sidecar.scene, this.sidecar.effects)?.fogOverride);
         this.grade = { ...sceneGrade(stack), fog, volumes };
+        this.actorLight = sceneActorLight(stack);
         this.post = scenePost(stack, activeComponents);
         this.applyGrade(this.grade);
         this.transform = transform;
@@ -951,6 +957,7 @@ export class GakumasSceneStage {
     applyLights(lights) {
         const { count, entries } = sceneLightData(lights, MAX_SCENE_LIGHTS);
         const uniforms = this.shared;
+        this.sceneLightEntries = entries;
         uniforms.gkLightCount.value = count;
         entries.forEach((light, index) => {
             uniforms.gkLightPosition.value[index].fromArray(light.position);
@@ -1027,6 +1034,8 @@ export class GakumasSceneStage {
         this.textures = [];
         this.probes = [];
         this.shared.gkLightCount.value = 0;
+        this.actorLight = null;
+        this.sceneLightEntries = [];
         this.shared.gkSkyMap.value = null;
         this.shared.gkHasSky.value = 0;
         this.shared.gkFogDensity.value = 0;

@@ -115,6 +115,9 @@ button { cursor:pointer; }
 .editor-free-look { grid-column:1/-1; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
 .editor-free-look[hidden] { display:none; }
 .editor-free-hint { grid-column:1/-1; margin:0; }
+.editor-gizmo-switch { grid-column:1/-1; display:flex; gap:6px; }
+.editor-gizmo-switch button { flex:1; min-height:28px; border:1px solid var(--editor-line); background:#FCFBF8; color:var(--editor-ink); font-size:11px; font-weight:800; cursor:pointer; }
+.editor-gizmo-switch button[aria-pressed="true"] { color:#fff; background:var(--gk-orange); border-color:var(--gk-orange); }
 .editor-motion-row { display:grid; grid-template-columns:minmax(132px,.72fr) minmax(0,1.4fr); gap:6px; }
 .editor-property-form input,.editor-property-form select,.editor-property-form textarea { width:100%; min-width:0; border:1px solid var(--editor-line); border-radius:0 8px; padding:6px 7px; color:var(--editor-ink); background:#FCFBF8; font-size:11px; outline:none; transition:border-color .16s ease,box-shadow .16s ease,background-color .16s ease; }
 .editor-property-form input:hover,.editor-property-form select:hover,.editor-property-form textarea:hover { border-color:rgba(60,72,132,.3); }

@@ -526,14 +526,38 @@ export function isBeatPairedCue(value) { return BEAT_PAIRED_CUE_IDS.includes(Str
 export function parseBeatCueToken(value) {
     const token = String(value || '').trim();
     if (token.startsWith(BEAT_FILE_PREFIX)) {
-        const file = token.slice(BEAT_FILE_PREFIX.length);
-        return file ? { mode: 'file', file, gesture: '', face: '', beat: true } : null;
+        let file = token.slice(BEAT_FILE_PREFIX.length);
+        let face = '';
+        let faceFile = '';
+        const faceFileMatch = /__facefile__(.+)$/u.exec(file);
+        if (faceFileMatch && isBeatMotionFile(faceFileMatch[1])) {
+            faceFile = faceFileMatch[1];
+            file = file.slice(0, faceFileMatch.index);
+        } else {
+            const faceMatch = /__face__([^_]+)$/u.exec(file);
+            if (faceMatch && BEAT_FACE_IDS.includes(faceMatch[1])) {
+                face = faceMatch[1];
+                file = file.slice(0, faceMatch.index);
+            }
+        }
+        return file ? { mode: 'file', file, gesture: '', face, faceFile, beat: true } : null;
+    }
+    const pairedFaceFile = /^__beat-paired__([^_]+)__facefile__(.+)$/u.exec(token);
+    if (pairedFaceFile && isBeatPairedCue(pairedFaceFile[1]) && isBeatMotionFile(pairedFaceFile[2])) {
+        const spec = BEAT_PAIRED_CUE_SPECS[pairedFaceFile[1]];
+        return { mode: 'paired', gesture: spec?.gesture || pairedFaceFile[1], face: '', faceFile: pairedFaceFile[2], beat: true,
+            ...(spec ? { bodySelector: spec.selector } : {}) };
     }
     const paired = /^__beat-paired__([^_]+)$/u.exec(token);
     if (paired && isBeatPairedCue(paired[1])) {
         const spec = BEAT_PAIRED_CUE_SPECS[paired[1]];
         return { mode: 'paired', gesture: spec?.gesture || paired[1], face: '', beat: true,
             ...(spec ? { bodySelector: spec.selector } : {}) };
+    }
+    const bodyFaceFile = /^__beat-body__([^_]+)__facefile__(.+)$/u.exec(token);
+    if (bodyFaceFile && BEAT_BODY_CUE_SPECS[bodyFaceFile[1]] && isBeatMotionFile(bodyFaceFile[2])) {
+        const spec = BEAT_BODY_CUE_SPECS[bodyFaceFile[1]];
+        return { mode: 'mixed', gesture: spec.gesture, face: '', faceFile: bodyFaceFile[2], bodySelector: spec.selector, beat: true };
     }
     const body = /^__beat-body__([^_]+)__face__([^_]+)$/u.exec(token);
     if (body && BEAT_BODY_CUE_SPECS[body[1]] && BEAT_FACE_IDS.includes(body[2])) {
@@ -571,15 +595,40 @@ export function beatMotionFileToken(value) {
     return file ? `${BEAT_FILE_PREFIX}${file}` : '';
 }
 
+function beatFaceSuffix(face = '') {
+    const requested = String(face || '').trim();
+    if (!requested) return '';
+    if (isBeatMotionFile(requested)) {
+        const file = requested.replace(/\\/gu, '/').split('/').pop().replace(/\.vmd$/iu, '');
+        return file ? `__facefile__${file}` : '';
+    }
+    const id = BEAT_FACE_ALIASES[requested.toLowerCase()] || requested.toLowerCase();
+    return BEAT_FACE_IDS.includes(id) ? `__face__${id}` : '';
+}
+
 export function resolveBeatCueAlias(value, face = '') {
-    if (isBeatMotionFile(value)) return beatMotionFileToken(value);
+    if (isBeatMotionFile(value)) {
+        const token = beatMotionFileToken(value);
+        const suffix = beatFaceSuffix(face);
+        return suffix ? `${token}${suffix}` : token;
+    }
     const token = String(value || '').trim().toLowerCase();
     if (token === 'shy') return resolveBeatCueAlias('tereru', face);
-    face = BEAT_FACE_ALIASES[String(face).trim().toLowerCase()] || face;
-    if (token === 'talk') return `__beat-body__talk-neutral__face__${BEAT_FACE_IDS.includes(String(face).trim().toLowerCase()) ? String(face).trim().toLowerCase() : 'neutral'}`;
+    const suffix = beatFaceSuffix(face);
+    const faceId = suffix.startsWith('__face__') ? suffix.slice('__face__'.length) : '';
+    if (token === 'talk') {
+        if (suffix.startsWith('__facefile__')) return `__beat-body__talk-neutral${suffix}`;
+        return `__beat-body__talk-neutral__face__${faceId || 'neutral'}`;
+    }
     const body = BEAT_BODY_CUE_SPECS[token];
-    if (body) return `__beat-body__${token}__face__${BEAT_FACE_IDS.includes(String(face).trim().toLowerCase()) ? String(face).trim().toLowerCase() : body.defaultFace}`;
+    if (body) {
+        if (suffix.startsWith('__facefile__')) return `__beat-body__${token}${suffix}`;
+        return `__beat-body__${token}__face__${faceId || body.defaultFace}`;
+    }
     if (BEAT_OVERLAY_CUE_SPECS[token]) return `__beat-overlay__${token}`;
-    if (isBeatPairedCue(token)) return `__beat-paired__${token}`;
+    if (isBeatPairedCue(token)) {
+        if (suffix.startsWith('__facefile__')) return `__beat-paired__${token}${suffix}`;
+        return `__beat-paired__${token}`;
+    }
     return BEAT_CUE_ALIASES[token] || '说话';
 }

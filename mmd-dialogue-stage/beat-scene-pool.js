@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import { GakumasSceneStage } from './gakumas-scene.js?v=20261101-camera-silent-v1';
-import { GakumasPostPass } from './gakumas-post.js?v=20261028-taa-supersample-v1';
-import { isBeatScene, resolveBeatBackgroundAsset, sceneAssetUrl } from './beat-background-assets.js?v=20261008-background-aliases-v1';
-import { applyCameraPose, SceneFreeLook } from './scene-free-look.js?v=20261102-beat-camera-pose-v1';
+import { GakumasSceneStage } from './gakumas-scene.js?v=20261105-light-range-v1';
+import { GakumasPostPass } from './gakumas-post.js?v=20261105-floor-ssr-v1';
+import { isBeatScene, resolveBeatBackgroundAsset, sceneAssetUrl } from './beat-background-assets.js?v=20261108-chat-clock-v1';
+import { applyCameraFocal, applyCameraPose, SceneFreeLook } from './scene-free-look.js?v=20261103-camera-lens-v1';
 import { createFreeLookControls } from './scene-free-look-controls.js?v=20261102-beat-camera-pose-v1';
 
 function warmScene(renderer, scene, camera) {
@@ -159,12 +159,15 @@ export class BeatScenePool {
             camera.position.fromArray(view.position); camera.up.fromArray(view.up); camera.lookAt(new THREE.Vector3().fromArray(view.target));
             camera.aspect = width / height; camera.fov = view.fov; camera.near = view.near; camera.far = view.far;
             applyCameraPose(camera, cameraOptions?.pose);
+            applyCameraFocal(camera, cameraOptions?.focal);
             stage.ensureCameraRange(camera); camera.updateProjectionMatrix();
         };
         const duration = Number(cameraOptions?.duration) > 0 ? Number(cameraOptions.duration) * 1000 : 0;
         applyCamera(duration && visible ? 0 : 1);
         if (!visible) warmScene(this.fallbackRenderer, stage.scene, camera);
         this.fallbackPost.enabled = true;this.fallbackPost.apply(stage.post);this.fallbackPost.resetHistory = true;
+        const focus = Number(cameraOptions?.dof?.focus);
+        this.fallbackPost.setDepthOfField?.(cameraOptions?.dof?.aperture && focus > 0 ? { aperture: cameraOptions.dof.aperture, focus } : null);
         this.fallbackCanvas.style.visibility = visible ? 'visible' : 'hidden';
         this.fallbackStage = stage; this.fallbackShot = shot; this.fallbackPosition = position; this.fallbackCameraOptions = cameraOptions;
         this.renderBackground();

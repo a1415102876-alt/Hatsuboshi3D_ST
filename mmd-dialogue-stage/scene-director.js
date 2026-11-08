@@ -258,7 +258,12 @@ export class SceneDirector {
 
     resume() {
         this.refreshCrowdBudget();
-        for (const entry of this.entries.values()) if (entry.present) entry.player.resume();
+        for (const entry of this.entries.values()) {
+            // An actor can be on stage but out of frame: Beat's applyShot() hides
+            // it and pauses its loop. Waking it here made every off-camera actor
+            // run a full animation, physics and draw loop into a hidden canvas.
+            if (entry.present && entry.canvas?.style?.visibility !== 'hidden') entry.player.resume();
+        }
     }
 
     dispose() {

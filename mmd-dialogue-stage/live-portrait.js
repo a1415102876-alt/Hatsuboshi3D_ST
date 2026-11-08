@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { applyActorPose, applyCameraPose } from './scene-free-look.js?v=20261102-actor-pose-v1';
+import { applyActorPose, applyCameraFocal, applyCameraPose } from './scene-free-look.js?v=20261103-camera-lens-v1';
 import { MMDLoader } from 'three/addons/loaders/MMDLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MMDAnimationHelper } from 'three/addons/animation/MMDAnimationHelper.js';
@@ -18,12 +18,13 @@ import {
 } from './core.js?v=20261011-stage-cue-rules-v4';
 import { idolAssetUrls, motionAssetUrls, motionAvailability } from './library-client.js?v=20261017-browser-cache-v1';
 import { idolCostumeVariant, resolveBeatCostume } from './beat-costumes.js?v=20261013-all-idol-solo1-v1';
-import { GAKUMAS_TEXTURE_KINDS, GAKUMAS_ACTIVE_TEXTURE_KINDS, selectMaterialTextures, setTextureColorSpace, textureDescriptor, textureUsesColorSpace } from './gakumas-materials.js?v=20261007-solo1-rampadd-v1';
-import { injectActorShader } from './gakumas-shader.js?v=20261004-key-view-v1';
+import { GAKUMAS_TEXTURE_KINDS, GAKUMAS_ACTIVE_TEXTURE_KINDS, selectMaterialTextures, setTextureColorSpace, textureDescriptor, textureUsesColorSpace } from './gakumas-materials.js?v=20261105-face-layer-off-v1';
+import { injectActorShader } from './gakumas-shader.js?v=20261105-face-layer-off-v1';
 import { actorStencilState, classifyActorPass, placeCharacterShadowLight, shouldCastCharacterShadow, shouldReceiveCharacterShadow } from './gakumas-passes.js?v=20261024-crowd-budget-v1';
-import { HairCoverStage } from './gakumas-hair-cover.js?v=20261027-taa-outline-v1';
-import { GAKUMAS_LOOK, GakumasLookPass, applyGakumasLookUniforms, createGakumasLookUniformValues, matcapKeyDirection } from './gakumas-look.js?v=20261027-picture-v1';
-import { GakumasPostPass } from './gakumas-post.js?v=20261028-taa-supersample-v1';
+import { HairCoverStage } from './gakumas-hair-cover.js?v=20261105-face-layer-off-v1';
+import { ACTOR_ADDITIONAL_LIGHTS, GAKUMAS_LOOK, GakumasLookPass, actorEnvironmentSample, actorScenePoint, applyGakumasLookUniforms, applySceneActorUniforms, createActorRoomUniforms, createGakumasLookUniformValues, matcapKeyDirection } from './gakumas-look.js?v=20261105-capture-gap-v1';
+import { aaLevel } from './gakumas-aa.js?v=20261105-aa-level-v1';
+import { GakumasPostPass, setCaptureMotionBlur } from './gakumas-post.js?v=20261105-floor-ssr-v1';
 import { motionFromPositions } from './gakumas-taa-motion.js?v=20261027-motion-aware-taa-v1';
 import { backgroundDepthBlur, backgroundPanAmount, stagePlateCover, zoomPlateCover } from './beat-player-core.js?v=20261027-bg-zoom-v1';
 import { hasGakumasVertexColorAttribute } from './gakumas-outline.js?v=20260909-outline1';
@@ -35,19 +36,29 @@ import {
     shouldPlayLivePortraitTalk,
     shouldShowLivePortrait,
 } from './live-portrait-policy.js?v=20261006-beat-effects-v1';
-import { parsePortraitCue, selectPortraitPerformance, portraitPerformanceCandidates } from './portrait-cues.js?v=20261101-motion-file-v1';
-import { StageAttentionController } from './stage-attention.js?v=20261030-perf-diagnostic-v2';
+import { parsePortraitCue, selectPortraitPerformance, portraitPerformanceCandidates } from './portrait-cues.js?v=20261103-paired-face-v1';
+import { StageAttentionController } from './stage-attention.js?v=20261103-adopt-base-v1';
 import { bindVisemeMorphs } from './dialogue-intent.js?v=20261011-emotion-cue-labels-v2';
-import { applyTalkMouthProfile, selectTalkMouthProfile, talkArticulationFromPhase } from './tts-lip-sync.js?v=20261013-audio-talk-v3';
+import { applyTalkMouthProfile, selectTalkMouthProfile, talkArticulationFromPhase } from './tts-lip-sync.js?v=20261107-surprise-mouth-v1';
 import { SceneDirector } from './scene-director.js?v=20261102-krnh-3d-v1';
 import { portraitCrowdBudget } from './portrait-crowd-budget.js?v=20261024-crowd-budget-v1';
 import { configureGlbAnimationTarget, detectLivePortraitFormat } from './live-portrait-model.js';
 import { bindGlbMorphTracks } from './glb-morph-tracks.js?v=20260929-face-primitives-v1';
 import { SecondaryMotion, applyHairRestRotationRebase, rebaseHairAnimationTracks, refreshRestInverseBinds } from './gakumas-secondary-motion.js?v=20261102-krnh-sleeve-gravity-v1';
+import { SecondaryMotionProxy, physicsLead, physicsWorkerSupported } from './secondary-motion-proxy.js?v=20261106-physics-worker-v1';
 import { FacialEffectsStage } from './facial-effects-stage.js?v=20261017-browser-cache-v1';
-import { loadResourceLibrary } from './asset-runtime.js?v=20261103-fktn-profile-r2-v1';
+import { loadResourceLibrary } from './asset-runtime.js?v=20261104-krnh-motion-index-v1';
 import { filterPreferredSitItems } from './seated-posture.js?v=20261027-seated-rollback-v1';
 import { createPerformanceBucket, recordPerformanceSample, snapshotPerformanceBucket } from './performance-monitor-core.js?v=20261030-perf-diagnostic-v2';
+import { phonePropForIdol, propVisibilityForCue, resolvePropAnchorName } from './stage-props.js';
+
+function portraitMotionLoops(item) {
+    const family = item?.family || item?.catalog?.family || '';
+    if (family === 'walk' || family === 'running') return true;
+    const phase = item?.phase || item?.catalog?.phase || '';
+    if (phase === 'lp') return true;
+    return String(item?.title || '').includes('循环');
+}
 
 export function createSceneDirector(container, runtimeOptions = {}) {
     return new SceneDirector(container, canvas => new LivePortraitRuntime(canvas, runtimeOptions));
@@ -69,6 +80,19 @@ const SECONDARY_MOTION_JSON = new URL('gakumas-secondary-motion.json?v=20261002-
 const SECONDARY_MOTION_MANIFEST = new URL('secondary-motion-manifest.json?v=20261026-hair-contact-v1', STAGE_ASSET_ROOT).href;
 const SECONDARY_PROFILE_VERSION = '20261102-krnh-sleeve-gravity-v1';
 const secondaryMotionTables = new Map();
+
+// One worker per actor. Module workers must be same-origin, so when the stage
+// is served from another origin (HATSU_ASSET_BASE) a tiny blob module imports
+// the real worker script instead.
+function createPhysicsWorker() {
+    const url = new URL('./secondary-motion-worker.js?v=20261106-physics-worker-v1', import.meta.url);
+    const options = { type: 'module', name: 'secondary-motion' };
+    if (url.origin === globalThis.location?.origin) return new Worker(url, options);
+    const wrapper = URL.createObjectURL(new Blob([`import ${JSON.stringify(url.href)};`], { type: 'text/javascript' }));
+    const worker = new Worker(wrapper, options);
+    setTimeout(() => URL.revokeObjectURL(wrapper), 60000);
+    return worker;
+}
 const LIBRARY_STATUS = '/mmd-dialogue-stage/library/status?v=20261013-all-idol-solo1-v1';
 const LIVE_PORTRAIT_GLB_SCALE = 12.5;
 const VMD_GLB_BONE_ALIASES = new Map([
@@ -189,12 +213,23 @@ function resolveVmdBoneName(rawName, bones) {
 }
 
 let singleton = null;
-const livePicture = { taa: true, plateSharpen: true };
+const livePicture = { taa: true, aa: 'medium', plateSharpen: true, motionBlur: false };
 const livePictureRuntimes = new Set();
 
 export function setLivePictureOptions(options = {}) {
-    if (typeof options.taa === 'boolean') livePicture.taa = options.taa;
     if (typeof options.plateSharpen === 'boolean') livePicture.plateSharpen = options.plateSharpen;
+    if (typeof options.motionBlur === 'boolean') livePicture.motionBlur = options.motionBlur;
+    setCaptureMotionBlur(livePicture.motionBlur);
+    const requested = typeof options.aa === 'string' ? aaLevel(options.aa) : null;
+    if (requested && requested.id === options.aa) {
+        livePicture.aa = requested.id;
+        livePicture.taa = requested.taa;
+    } else if (typeof options.taa === 'boolean') {
+        livePicture.taa = options.taa;
+        const current = aaLevel(livePicture.aa);
+        if (options.taa && !current.taa) livePicture.aa = 'medium';
+        if (!options.taa && current.taa) livePicture.aa = 'off';
+    }
     for (const runtime of livePictureRuntimes) runtime.syncPictureOptions({ render: true });
 }
 
@@ -257,6 +292,8 @@ export class LivePortraitRuntime {
         this.indexByPack = new Map();
         this.model = null;
         this.animationTarget = null;
+        this.props = new Map();
+        this.propLoadPromise = null;
         this.modelFormat = '';
         this.animationMixer = null;
         this.taaMotionTarget = null;
@@ -265,6 +302,9 @@ export class LivePortraitRuntime {
         this.helper = new MMDAnimationHelper({ afterglow: 0, sync: true });
         this.secondaryMotion = new SecondaryMotion();
         this.secondaryMotionBound = false;
+        // Set only while a worker holds an identical binding; otherwise the
+        // in-thread solver above runs exactly as before.
+        this.physicsProxy = null;
         this.hairRestRebase = [];
         this.modelKey = '';
         this.actions = new Map();
@@ -553,10 +593,77 @@ export class LivePortraitRuntime {
         if (format !== 'glb') this.helper.add(animationTarget, { physics: false });
         else this.animationMixer = new THREE.AnimationMixer(model);
         await this.bindSecondaryMotion(model);
+        await this.loadPhoneProp(idolId);
         this.frameVnCamera();
         await this.ensureFamily('idle', { play: true });
         this.ready = Boolean(this.model);
         return this.ready;
+    }
+
+    async loadPhoneProp(idolId = this.idolId) {
+        const definition = phonePropForIdol(idolId);
+        if (!definition || !this.model || this.modelFormat !== 'glb') return false;
+        if (this.props.has(definition.id)) return true;
+        if (this.propLoadPromise) return this.propLoadPromise;
+        this.propLoadPromise = (async () => {
+            const sourceUrl = new URL(definition.local, STAGE_ASSET_ROOT).href;
+            const url = this.resources?.resolve(sourceUrl) || sourceUrl;
+            const loader = new GLTFLoader(this.resources?.manager(THREE));
+            const loaded = await loader.loadAsync(url);
+            const root = loaded?.scene;
+            if (!root) return false;
+            const boneNames = [];
+            this.model.traverse(child => { if (child.isBone) boneNames.push(child.name); });
+            const anchorName = resolvePropAnchorName(boneNames, definition.anchorNames);
+            const anchor = anchorName ? this.model.getObjectByName(anchorName) : null;
+            if (!anchor) return false;
+            root.name = `stage-prop-${definition.id}`;
+            root.position.fromArray(definition.offset || [0, 0, 0]);
+            root.rotation.fromArray(definition.rotation || [0, 0, 0]);
+            root.scale.setScalar(Number(definition.scale) || 1);
+            root.visible = false;
+            root.traverse(child => {
+                if (!child.isMesh) return;
+                child.castShadow = true;
+                child.receiveShadow = true;
+            });
+            anchor.add(root);
+            this.props.set(definition.id, { definition, root, anchor, anchorName });
+            return true;
+        })().catch(error => {
+            console.warn('[LivePortrait] phone prop unavailable', idolId, error);
+            return false;
+        }).finally(() => { this.propLoadPromise = null; });
+        return this.propLoadPromise;
+    }
+
+    setPropVisibility(propId, visible) {
+        const entry = this.props.get(String(propId || ''));
+        if (!entry?.root) return false;
+        entry.root.visible = Boolean(visible);
+        return true;
+    }
+
+    applyPropCue(cue) {
+        const visibility = propVisibilityForCue(cue);
+        if (visibility === null) return false;
+        return this.setPropVisibility('phone', visibility);
+    }
+
+    disposeProps() {
+        for (const { root } of this.props.values()) {
+            root.removeFromParent();
+            root.traverse(child => {
+                if (child.geometry?.dispose) child.geometry.dispose();
+                const materials = Array.isArray(child.material) ? child.material : [child.material];
+                materials.filter(Boolean).forEach(material => {
+                    Object.values(material).forEach(value => { if (value?.isTexture) value.dispose(); });
+                    material.dispose?.();
+                });
+            });
+        }
+        this.props.clear();
+        this.propLoadPromise = null;
     }
 
     bindVisemeMorphs(idol) {
@@ -824,6 +931,7 @@ export class LivePortraitRuntime {
             if (this.hairRestRebase.length) refreshRestInverseBinds(model);
             this.secondaryMotion.bind(this.restPose);
             this.secondaryMotionBound = true;
+            await this.bindPhysicsWorker(model);
             return true;
         } catch (error) {
             if (this.resources) throw error;
@@ -834,7 +942,49 @@ export class LivePortraitRuntime {
         }
     }
 
-    catalogItems() {
+    /**
+     * Mirror the model's skeleton into a worker and run the solver there. The
+     * in-thread solver stays bound as the reference: the worker is used only if
+     * it reports the same spring count and the same missing bones.
+     */
+    async bindPhysicsWorker(model) {
+        this.physicsProxy?.dispose();
+        this.physicsProxy = null;
+        // GLB is the production path. PMX rewrites live hair rest rotations
+        // before binding, which the mirror would have to replay.
+        if (this.modelFormat !== 'glb' || !physicsWorkerSupported()) return false;
+        const proxy = new SecondaryMotionProxy({
+            createWorker: createPhysicsWorker,
+            lead: physicsLead(),
+            onFail: reason => {
+                if (this.physicsProxy === proxy) {
+                    this.physicsProxy = null;
+                    // The in-thread solver has been idle; re-seed it from the current pose.
+                    if (this.secondaryMotionBound) this.secondaryMotion.reset();
+                }
+                console.warn('[LivePortrait] physics worker unavailable, using the in-thread solver:', reason);
+            },
+        });
+        this.physicsProxy = proxy;
+        const ok = await proxy.bind({
+            restPose: this.restPose,
+            table: this.secondaryMotion.table,
+            worldScale: this.secondaryMotion.worldScale,
+            expect: { springs: this.secondaryMotion.springs.length, missing: this.secondaryMotion.missing },
+        });
+        if (!ok || this.model !== model) {
+            if (this.physicsProxy === proxy) this.physicsProxy = null;
+            proxy.dispose();
+            return false;
+        }
+        return true;
+    }
+
+    physicsRuntime() {
+        return this.physicsProxy?.ready ? this.physicsProxy.runtime : this.secondaryMotion?.runtime;
+    }
+
+    catalogItems({ anyCharacter = false } = {}) {
         const buckets = this.map?.buckets || [];
         return filterPreferredSitItems(buckets.flatMap(bucket => bucket.families.flatMap(family => family.items.map(item => ({
             ...item,
@@ -847,7 +997,7 @@ export class LivePortraitRuntime {
                 phase: item.phase,
                 additive: item.additive,
             },
-        })))).filter(item => ['cmmn', this.idolId || LIVE_PORTRAIT_IDOL_ID].includes(item.character)));
+        })))).filter(item => anyCharacter || ['cmmn', this.idolId || LIVE_PORTRAIT_IDOL_ID].includes(item.character)));
     }
 
     async setFacialEffects(effects = []) {
@@ -988,24 +1138,29 @@ export class LivePortraitRuntime {
         const generation = this.performanceGeneration;
         let cue = parsePortraitCue(speaker, slideType, this.idolId || LIVE_PORTRAIT_IDOL_ID);
         if (!cue || !this.ready) return false;
+        this.applyPropCue(cue);
         if (cue.mode === 'keep') {
             if (this.performanceKey) return true;
             cue = parsePortraitCue('藤田琴音(待机)');
         }
-        if (cue.mode !== 'additive') this.clearAdditiveClip();
+        const faceFileSuffix = cue.faceFile ? `:${cue.faceFile}` : '';
         const key = cue.mode === 'file'
-            ? `file:${cue.file}`
+            ? `file:${cue.file}:${cue.face || ''}${faceFileSuffix}`
             : cue.bodySelector
-            ? `${cue.mode}:${cue.gesture}:${cue.bodySelector}:${cue.face}`
-            : `${cue.mode}:${cue.gesture}:${cue.face}`;
-        const catalog = this.catalogItems().filter(item => motionAvailability(item, this.indexByPack).ready);
+            ? `${cue.mode}:${cue.gesture}:${cue.bodySelector}:${cue.face}${faceFileSuffix}`
+            : `${cue.mode}:${cue.gesture}:${cue.face}${faceFileSuffix}`;
+        const catalog = this.catalogItems({ anyCharacter: cue.mode === 'file' || Boolean(cue.faceFile) }).filter(item => motionAvailability(item, this.indexByPack).ready);
         const previousSelection = key === this.performanceKey ? this.performanceSelection : null;
         const item = this.plannedPerformances?.get(speaker) || selectPortraitPerformance(cue, catalog, this.idolId || LIVE_PORTRAIT_IDOL_ID, {
             avoidBody: previousSelection?.body,
             avoidFace: previousSelection?.face,
         });
         if (!item) return false;
-        if (previousSelection && item.body === previousSelection.body && item.face === previousSelection.face) return true;
+        if (cue.mode !== 'additive' && previousSelection && item.body === previousSelection.body && item.face === previousSelection.face) {
+            this.holdSamePerformance();
+            return true;
+        }
+        if (cue.mode !== 'additive') this.clearAdditiveClip();
         const files = motionAssetUrls(item, this.config, this.indexByPack);
         if (cue.mode !== 'file' && this.idolId === 'nasr' && !item.face && item.body) {
             const idle = await this.ensureFamily('idle', { play: !firstFrame, skipFace: true });
@@ -1127,6 +1282,16 @@ export class LivePortraitRuntime {
         return true;
     }
 
+    holdSamePerformance() {
+        // A repeated cue keeps the held pose. A one-shot nod still ends, but
+        // the looping breath must stay, or start if the pose is already held.
+        if (this.additiveFinishedHandler) this.clearAdditiveClip();
+        if (!this.basePerformanceFinished || !this.autoIdleAdditiveOnHold || this.additiveAction) return;
+        this.playRandomIdleAdditiveOnHold(this.playGeneration).catch(error => {
+            console.warn('[LivePortrait] idle additive hold failed', error);
+        });
+    }
+
     async playRandomIdleAdditiveOnHold(generation = this.playGeneration) {
         if (!this.autoIdleAdditiveOnHold || this.paused || !this.basePerformanceFinished || generation !== this.playGeneration) return false;
         const candidates = this.idleAdditiveItems();
@@ -1178,7 +1343,7 @@ export class LivePortraitRuntime {
         let cue = parsePortraitCue(speaker, slideType, this.idolId || LIVE_PORTRAIT_IDOL_ID);
         if (!cue) return false;
         if (cue.mode === 'keep') cue = parsePortraitCue('藤田琴音(待机)');
-        const catalog = this.catalogItems().filter(item => motionAvailability(item, this.indexByPack).ready);
+        const catalog = this.catalogItems({ anyCharacter: cue.mode === 'file' || Boolean(cue.faceFile) }).filter(item => motionAvailability(item, this.indexByPack).ready);
         const selected = this.plannedPerformances?.get(speaker);
         const items = selected ? [selected] : portraitPerformanceCandidates(cue, catalog, this.idolId || LIVE_PORTRAIT_IDOL_ID);
         if (!items.length) return false;
@@ -1367,8 +1532,9 @@ export class LivePortraitRuntime {
         // longest clip finishes, so both channel fades must finish by then.
         const performanceDuration = Math.max(0, ...clips.map(({ clip }) => clip.duration));
         const bodyFade = Math.min(Math.max(0, requestedFade), performanceDuration);
-        // Locomotion continues until another cue replaces it; other poses hold.
-        const loop = ['walk', 'running'].includes(item.family || item.catalog?.family);
+        // Walking, running, and motions marked as loops keep playing until the
+        // next cue. Other poses hold their last frame.
+        const loop = portraitMotionLoops(item);
         this.clearFinishedHandler(mixer);
         const nextActions = clips.map(({ clip }) => mixer.clipAction(clip));
         const keep = new Set(nextActions);
@@ -1408,8 +1574,11 @@ export class LivePortraitRuntime {
         else this.helper.update(0);
         this.model?.updateMatrixWorld(true);
         if (this.secondaryMotionBound) {
+            // Reset in-thread first so the bones show the seeded pose at once,
+            // then re-seed the worker's simulation from that same pose.
             this.secondaryMotion.reset();
             this.model?.updateMatrixWorld(true);
+            this.physicsProxy?.reset();
         }
         if (render) {
             this.resize();
@@ -1594,12 +1763,14 @@ export class LivePortraitRuntime {
                 drawStride: Number(budget.drawStride) || 1,
                 updateStride: Number(budget.updateStride) || 1,
             },
-            physics: this.secondaryMotionBound && this.secondaryMotion?.runtime
+            physics: this.secondaryMotionBound && this.physicsRuntime()
                 ? {
-                    fixedSteps: Number(this.secondaryMotion.runtime.fixedSteps) || 0,
-                    staticCollisionHits: Number(this.secondaryMotion.runtime.staticCollisionHits) || 0,
-                    chainCollisionHits: Number(this.secondaryMotion.runtime.chainCollisionHits) || 0,
-                    outputBones: Number(this.secondaryMotion.runtime.lastOutputBones) || 0,
+                    worker: Boolean(this.physicsProxy?.ready),
+                    solveMs: Number(this.physicsProxy?.lastSolveMs) || 0,
+                    fixedSteps: Number(this.physicsRuntime().fixedSteps) || 0,
+                    staticCollisionHits: Number(this.physicsRuntime().staticCollisionHits) || 0,
+                    chainCollisionHits: Number(this.physicsRuntime().chainCollisionHits) || 0,
+                    outputBones: Number(this.physicsRuntime().lastOutputBones) || 0,
                 }
                 : null,
             frame: snapshotPerformanceBucket(monitor.bucket),
@@ -1625,11 +1796,14 @@ export class LivePortraitRuntime {
 
     syncPictureOptions({ render = false } = {}) {
         const budget = this.crowdBudget || portraitCrowdBudget({ devicePixelRatio: globalThis.devicePixelRatio || 1 });
-        const nextTaa = livePicture.taa && budget.taa;
-        if (this.postPass && this.postPass.modules.taa !== nextTaa) {
-            this.postPass.setModule('taa', nextTaa);
-            this.postPass.resetHistory = true;
-        }
+        const level = aaLevel(livePicture.aa);
+        const allow = budget.taa !== false;
+        this.postPass?.setQuality({
+            taa: allow && level.taa,
+            fxaa: allow && level.fxaa,
+            renderScale: level.renderScale,
+            renderPixelBudget: level.renderPixelBudget,
+        });
         this.lookPass?.setPlateSharpen(livePicture.plateSharpen);
         if (render && !this.paused && this.renderer) this.renderFrame();
     }
@@ -1746,7 +1920,8 @@ export class LivePortraitRuntime {
             const phases = {};
             if (this.model) {
                 const animationStarted = monitor ? globalThis.performance.now() : 0;
-                this.secondaryMotion?.restoreBeforeAnimation?.();
+                if (this.physicsProxy?.ready) this.physicsProxy.restoreBeforeAnimation();
+                else this.secondaryMotion?.restoreBeforeAnimation?.();
                 if (this.talkTakeoverActive) {
                     this.restoreTalkBaseMouth();
                     this.talkBasePreparedForFrame = true;
@@ -1762,9 +1937,14 @@ export class LivePortraitRuntime {
                 const secondaryStarted = monitor ? globalThis.performance.now() : 0;
                 if (this.secondaryMotionBound) {
                     const backgroundPhysics = updateStride > 1;
-                    this.secondaryMotion.update(step, backgroundPhysics
+                    const physicsOptions = backgroundPhysics
                         ? { maxFixedSteps: 1, dropRemainder: true }
-                        : undefined);
+                        : undefined;
+                    // With a worker the solve happens off-thread; this only
+                    // posts the pose and applies the newest finished result.
+                    if (!this.physicsProxy?.update(step, physicsOptions)) {
+                        this.secondaryMotion.update(step, physicsOptions);
+                    }
                 }
                 if (monitor) phases.secondaryMotionMs = globalThis.performance.now() - secondaryStarted;
                 const facialStarted = monitor ? globalThis.performance.now() : 0;
@@ -1832,16 +2012,48 @@ export class LivePortraitRuntime {
         if (this.postPass?.active) this.postPass.setMotionHint(this.taaMotionHint());
         const draw = () => {
             this.camera.updateMatrixWorld();
+            this.syncDepthOfField();
             this.updateGakumasUniforms();
             this.drawPortrait();
+            this.afterRender?.();
         };
         if (this.stageScene && this.sceneFreeLook) this.sceneFreeLook.withCamera(this.camera, draw);
         else draw();
     }
 
+    setCameraLens(lens = {}) {
+        const focal = Number(lens?.focal);
+        const dof = lens?.dof?.aperture ? lens.dof : null;
+        this.cameraLens = { focal: focal > 0 ? focal : 0, dof };
+        this.applyStoredFocal();
+        this.syncDepthOfField();
+    }
+
+    applyStoredFocal() {
+        if (this.cameraLens?.focal > 0) applyCameraFocal(this.camera, this.cameraLens.focal);
+    }
+
+    syncDepthOfField() {
+        const dof = this.cameraLens?.dof;
+        if (!this.postPass?.setDepthOfField) return;
+        if (!dof?.aperture) {
+            this.postPass.setDepthOfField(null);
+            return;
+        }
+        let focus = Number(dof.focus);
+        if (!(focus > 0) && this.camera && this.model) {
+            const head = this.model.getObjectByName?.('Head') || this.model;
+            this.focusPoint ||= new THREE.Vector3();
+            focus = this.camera.position.distanceTo(head.getWorldPosition(this.focusPoint));
+        }
+        this.postPass.setDepthOfField(focus > 0 ? { aperture: dof.aperture, focus } : null);
+    }
+
     setActorPose(pose) {
         if (!this.model) return false;
-        return applyActorPose(this.model, pose || null);
+        const applied = applyActorPose(this.model, pose || null);
+        if (applied) this.attention.adoptBase();
+        return applied;
     }
 
     setStageScene(stage, shot = 'medium', position = 'center', cameraOptions = {}) {
@@ -1860,6 +2072,7 @@ export class LivePortraitRuntime {
                 this.camera.up.set(0, 1, 0);
                 this.camera.lookAt(new THREE.Vector3().fromArray(saved.target));
                 this.camera.fov = saved.fov;this.camera.near = saved.near;this.camera.far = saved.far;
+                this.applyStoredFocal();
                 this.camera.updateProjectionMatrix();
                 this.postPass?.apply(null);
                 this.syncPictureOptions();
@@ -1883,6 +2096,7 @@ export class LivePortraitRuntime {
             this.camera.lookAt(new THREE.Vector3().fromArray(view.target));
             this.camera.fov = view.fov; this.camera.near = view.near; this.camera.far = view.far;
             applyCameraPose(this.camera, cameraOptions?.pose);
+            applyCameraFocal(this.camera, cameraOptions?.focal || this.cameraLens?.focal);
             stage.ensureCameraRange(this.camera);
             this.camera.updateProjectionMatrix();
         };
@@ -2074,6 +2288,7 @@ export class LivePortraitRuntime {
         this.cameraFrameReady = true;
         this.vnCameraState = { position: this.camera.position.toArray(), target: target.toArray(),
                                fov: this.camera.fov, near: this.camera.near, far: this.camera.far };
+        this.applyStoredFocal();
         this.applyKeyLight(GAKUMAS_LOOK.keyAzimuth, GAKUMAS_LOOK.keyElevation);
         this.updateGakumasUniforms();
     }
@@ -2238,6 +2453,19 @@ export class LivePortraitRuntime {
             gkLightDirection: { value: new THREE.Vector3(0.3, 0.6, 0.7) },
             gkLightColor: { value: new THREE.Color(0xffffff) },
             gkLightStrength: { value: GAKUMAS_LOOK.key },
+            gkMainLightWorld: { value: 0 },
+            gkWorldToScene: { value: new THREE.Matrix4() },
+            gkAddLightCount: { value: 0 },
+            gkAddLightPosition: { value: Array.from({ length: ACTOR_ADDITIONAL_LIGHTS }, () => new THREE.Vector4()) },
+            gkAddLightDirection: { value: Array.from({ length: ACTOR_ADDITIONAL_LIGHTS }, () => new THREE.Vector4(0, -1, 0, 1)) },
+            gkAddLightColor: { value: Array.from({ length: ACTOR_ADDITIONAL_LIGHTS }, () => new THREE.Vector3()) },
+            gkAddLightParams: { value: Array.from({ length: ACTOR_ADDITIONAL_LIGHTS }, () => new THREE.Vector4(0, 0, 1, -1)) },
+            gkAddLightScale: { value: 0 },
+            gkAddLightSpecularScale: { value: 1 },
+            gkMatCapOffset: { value: 0.3 },
+            gkShadeApply: { value: 1 },
+            gkEyeHighlightColor: { value: new THREE.Color(0xffffff) },
+            gkEyeReflectionColor: { value: new THREE.Color(0xffffff) },
             gkShadowStrength: { value: this.shadowStrength },
             gkHeadRight: { value: new THREE.Vector3(1, 0, 0) },
             gkRimDirection: { value: new THREE.Vector3(...GAKUMAS_LOOK.rimView) },
@@ -2251,7 +2479,9 @@ export class LivePortraitRuntime {
             gkCharacterShadowEnabled: { value: 0 },
             gkCharacterShadowReceive: { value: 1 },
             gkCharacterShadowContact: { value: 0.001 },
+            gkCharacterShadowSize: { value: 4096 },
             gkHairFadeParam: { value: new THREE.Vector4(0.15, 4.0, 0.3, 2.0) },
+            ...createActorRoomUniforms(),
             ...createGakumasLookUniformValues(),
         };
     }
@@ -2371,7 +2601,7 @@ export class LivePortraitRuntime {
                 }
                 this.applyStencil(material, actorStencilState(material.name, actorPass));
                 material.onBeforeCompile = shader => injectActorShader(shader, uniforms);
-                material.customProgramCacheKey = () => `gakumas-v2:gakumas:${role}:rim-v1`;
+                material.customProgramCacheKey = () => `gakumas-v2:gakumas:${role}:face-layer-off-v1`;
                 material.needsUpdate = true;
                 material.visible = material.userData.gakumasPostHighlightOnly !== true;
                 this.hairCoverStage.add(child, material, materialIndex, uniforms, hairTextureName);
@@ -2395,7 +2625,7 @@ export class LivePortraitRuntime {
         const overlay = source.clone();
         overlay.name = `${source.name || 'm_hir+'}:GLBOverlay`;
         overlay.onBeforeCompile = source.onBeforeCompile;
-        overlay.customProgramCacheKey = () => 'gakumas-glb-hair-highlight-actor-v1';
+        overlay.customProgramCacheKey = () => 'gakumas-glb-hair-highlight-actor-v4';
         overlay.defines = { ...(source.defines || {}) };
         overlay.toneMapped = true;
         overlay.transparent = true;
@@ -2443,6 +2673,7 @@ export class LivePortraitRuntime {
         if (axis) this.gakumasHeadRight.setFromMatrixColumn(axis.matrixWorld, 0).normalize();
         const shadowLight = this.characterShadowLight;
         const characterShadow = placeCharacterShadowLight(shadowLight, this.camera, this.characterShadowFit, this.crowdShadowMap || this.crowdBudget?.shadowMap || 4096);
+        const roomSample = actorEnvironmentSample(this.stageScene, actorScenePoint(this.model, this.stageScene));
         this.gakumasUniforms.forEach(uniforms => {
             uniforms.gkLightDirection.value.copy(direction);
             uniforms.gkLightColor.value.copy(this.keyLight.color);
@@ -2455,7 +2686,10 @@ export class LivePortraitRuntime {
             uniforms.gkCharacterShadowMap.value = shadowLight?.shadow.map?.texture || null;
             if (shadowLight) uniforms.gkCharacterShadowMatrix.value.copy(shadowLight.shadow.matrix);
             uniforms.gkCharacterShadowContact.value = characterShadow?.contact || 0.001;
+            // Texel size of the allocated map, which three keeps until it is disposed.
+            uniforms.gkCharacterShadowSize.value = shadowLight?.shadow.map?.width || shadowLight?.shadow.mapSize.x || 4096;
             applyGakumasLookUniforms(uniforms);
+            applySceneActorUniforms(uniforms, this.stageScene, roomSample);
         });
     }
 
@@ -2487,9 +2721,12 @@ export class LivePortraitRuntime {
     dispose() {
         livePictureRuntimes.delete(this);
         this.pause();
+        this.physicsProxy?.dispose();
+        this.physicsProxy = null;
         const mixer = this.model ? this.ensureMixer() : null;
         this.clearAdditiveClip();
         this.clearFinishedHandler(mixer);
+        this.disposeProps();
         this.hairCoverStage.dispose();
         this.gakumasTextures.forEach(entry => entry.texture?.dispose());
         this.gakumasTextures = [];

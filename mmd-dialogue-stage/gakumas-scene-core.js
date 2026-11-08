@@ -293,6 +293,33 @@ export function sceneGrade(stack = {}) {
     };
 }
 
+// Character lighting written by the scene volume, not by the stage sliders.
+// VLActorParameter is the runtime block: mainLightSpace 0 keeps the key in
+// MatCap space, and its xy angles are azimuth then elevation. Additional
+// lights use the same realtime scene lights as the background, scaled by
+// additiveLightScale. Eye highlight and eye reflection are separate tints.
+export function sceneActorLight(stack = {}) {
+    const actor = stack.VLActorParameter || {};
+    const campus = stack.CampusLitActor || {};
+    const angle = actor.mainLightAngle || campus.mainLightAngle || null;
+    const colorSource = actor.lightColor || campus.lightColor || null;
+    const shadeApply = actor.shadeApplyRatio ?? campus.shadeApplyRatio;
+    return {
+        hasMainLight: Boolean(angle || colorSource),
+        mainLightSpace: Number(actor.mainLightSpace ?? campus.mainLightSpace) || 0,
+        azimuth: Number(angle?.x) || 0,
+        elevation: Number(angle?.y) || 0,
+        color: linearColor(colorArray(colorSource)),
+        additiveScale: Number(actor.additiveLightScale) || 0,
+        additiveSpecularScale: Number.isFinite(Number(actor.additiveLightSpecularScale)) ? Number(actor.additiveLightSpecularScale) : 1,
+        shadeApply: Number.isFinite(Number(shadeApply)) ? Number(shadeApply) : 1,
+        matCapOffset: Number.isFinite(Number(actor.matCapOffset)) ? Number(actor.matCapOffset) : 0.3,
+        eyeHighlightColor: linearColor(colorArray(actor.eyeHighlightColor)),
+        eyeReflectionColor: linearColor(colorArray(actor.eyeReflectionColor)),
+        giScale: Number(actor.giScale ?? campus.giScale) || 0,
+    };
+}
+
 // VL SphereFog from the volume stack. Volume parameters are raw Unity values,
 // so the centre still needs the X flip into glTF space.
 export function sceneSphereFog(stack = {}) {
@@ -463,6 +490,18 @@ export const SCENE_LIGHT_TYPES = { directional: 0, point: 1, spot: 2 };
 
 // URP light constants: distance attenuation uses 1/range^2, the spot cone is
 // saturate(dot * a + b)^2 with a/b from the inner and outer cosines.
+// The window below replaces that photometric curve. Inverse-square on these
+// intensities (about 20–50 at one metre) falls off inside the first metre,
+// even when the exported range is 2.7–4 m. Hold the light until 35% of the
+// range, then smooth it to zero at the range.
+export function punctualWindow(distance, range) {
+    const radius = Number(range);
+    if (!(radius > 0)) return 0;
+    const t = Math.min(1, Math.max(0, Number(distance) / radius));
+    const x = Math.min(1, Math.max(0, (t - 0.35) / 0.65));
+    const smooth = x * x * (3 - 2 * x);
+    return 1 - smooth;
+}
 export function spotAttenuation(spotAngle, innerSpotAngle) {
     const cosOuter = Math.cos((spotAngle * Math.PI) / 360);
     const cosInner = Math.max(Math.cos(((innerSpotAngle || 0) * Math.PI) / 360), cosOuter + 1e-4);
@@ -502,6 +541,100 @@ function boxOf(probe) {
 
 export function reflectionProbeBox(probe) {
     return boxOf(probe);
+}
+
+// Dynamic actors have no lightmap UVs. Unity shades them from the light-probe
+// grid: inverse-distance blend of the nearest probes supplies SH and the
+// shadowmask occlusion that static meshes read from the mask texture.
+export function sampleLightField(field, point = [0, 0, 0], nearest = 4) {
+    const positions = field?.positions;
+    if (!Array.isArray(positions) || !positions.length || !Array.isArray(point)) return null;
+    const ranked = [];
+    for (let index = 0; index < positions.length; index += 1) {
+        const probe = positions[index];
+        if (!Array.isArray(probe) || probe.length < 3) continue;
+        const dx = probe[0] - point[0];
+        const dy = probe[1] - point[1];
+        const dz = probe[2] - point[2];
+        const distanceSquared = dx * dx + dy * dy + dz * dz;
+        if (ranked.length < nearest) {
+            ranked.push({ index, distanceSquared });
+            if (ranked.length === nearest) ranked.sort((a, b) => a.distanceSquared - b.distanceSquared);
+        } else if (distanceSquared < ranked[nearest - 1].distanceSquared) {
+            ranked[nearest - 1] = { index, distanceSquared };
+            ranked.sort((a, b) => a.distanceSquared - b.distanceSquared);
+        }
+    }
+    if (!ranked.length) return null;
+    if (ranked.length < nearest) ranked.sort((a, b) => a.distanceSquared - b.distanceSquared);
+    if (ranked[0].distanceSquared < 1e-8) return lightProbeAt(field, ranked[0].index);
+    let weightSum = 0;
+    const weights = ranked.map(item => {
+        const weight = 1 / (item.distanceSquared + 1e-4);
+        weightSum += weight;
+        return weight;
+    });
+    const sh = Array.from({ length: 9 }, () => [0, 0, 0]);
+    const occlusion = [0, 0, 0, 0];
+    let shWeight = 0;
+    ranked.forEach((item, rank) => {
+        const weight = weights[rank] / weightSum;
+        const coefficients = shCoefficients(field.coefficients?.[item.index]);
+        if (coefficients) {
+            shWeight += weight;
+            coefficients.forEach((rgb, band) => {
+                rgb.forEach((value, channel) => {
+                    sh[band][channel] += value * weight;
+                });
+            });
+        }
+        const sample = probeOcclusion(field.occlusion?.[item.index]);
+        sample.forEach((value, channel) => {
+            occlusion[channel] += value * weight;
+        });
+    });
+    if (shWeight > 0 && shWeight < 0.999) {
+        const scale = 1 / shWeight;
+        sh.forEach(rgb => {
+            rgb[0] *= scale;
+            rgb[1] *= scale;
+            rgb[2] *= scale;
+        });
+    }
+    return { sh: shWeight > 0 ? sh : null, occlusion };
+}
+
+function probeOcclusion(value) {
+    return [0, 1, 2, 3].map(channel => {
+        const sample = Array.isArray(value) ? Number(value[channel]) : 1;
+        return Number.isFinite(sample) ? sample : 1;
+    });
+}
+
+function lightProbeAt(field, index) {
+    return { sh: shCoefficients(field.coefficients?.[index]), occlusion: probeOcclusion(field.occlusion?.[index]) };
+}
+
+// The toon key follows the mixed directional's shadowmask channel. Spot
+// channels stay on their own additional lights so a local lamp does not
+// darken the whole character.
+export function actorShadowChannel(entries = []) {
+    const directional = entries.find(entry => entry.position?.[3] === 0 && Number(entry.params?.[3]) >= 0);
+    return directional ? Number(directional.params[3]) : -1;
+}
+
+export function actorEnvironmentSample(stage, point) {
+    if (!stage?.sidecar || !Array.isArray(point)) return null;
+    const field = sampleLightField(stage.sidecar.lightProbes, point);
+    const sh = field?.sh || shCoefficients(stage.sidecar.environment?.ambientProbe);
+    return {
+        sh: sh || null,
+        occlusion: field?.occlusion || [1, 1, 1, 1],
+        shadowChannel: actorShadowChannel(stage.sceneLightEntries),
+        probeIndex: selectReflectionProbe(stage.sidecar.reflectionProbes || [], point),
+        giScale: Number(stage.actorLight?.giScale) || 0,
+        tint: stage.grade?.lightmapTint || [1, 1, 1],
+    };
 }
 
 // Unity picks probes per renderer from its bounds; one probe per mesh is

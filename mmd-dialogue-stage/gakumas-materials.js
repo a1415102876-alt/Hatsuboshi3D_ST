@@ -6,6 +6,13 @@ const suffixKinds = {
 
 export const GAKUMAS_TEXTURE_KINDS = ['shade', 'def', 'ramp', 'highlight', 'rampAdd', 'layer', 'anisotropic'];
 export const GAKUMAS_ACTIVE_TEXTURE_KINDS = ['shade', 'def', 'ramp', 'highlight', 'rampAdd'];
+export const GAKUMAS_OPTIONAL_TEXTURE_KINDS = ['layer'];
+
+export function gakumasLoadedTextureKinds({ faceLayer = false } = {}) {
+    return faceLayer
+        ? [...GAKUMAS_ACTIVE_TEXTURE_KINDS, ...GAKUMAS_OPTIONAL_TEXTURE_KINDS]
+        : GAKUMAS_ACTIVE_TEXTURE_KINDS;
+}
 
 // Authored mdl_chr_fktn-cstm-0001_body material properties. m_bdyco shares
 // m_bdy's RampAdd atlas even though its albedo/def maps have a separate stem.

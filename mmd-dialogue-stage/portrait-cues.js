@@ -2,7 +2,7 @@ import { PAIRED_CUES, BODY_ONLY_CUES, FACE_ONLY_CUES } from './dialogue-intent.j
 import { DEFAULT_MOTION_VARIANTS, findFacePlaylistIndex, findGesturePlaylistIndex, gesturePlaylistCandidateIndices } from './core.js?v=20261011-weighted-cues-v2';
 import { isLivePortraitSpeaker } from './live-portrait-policy.js';
 import { sceneIdolId, buildStageRules } from './scene-protocol.js';
-import { beatMotionFileKey, isBeatMotionCandidate, isBeatMotionEligible, isBeatPairedCue, parseBeatCueToken } from './beat-cues.js?v=20261101-motion-file-v1';
+import { beatMotionFileKey, isBeatMotionCandidate, isBeatMotionEligible, isBeatPairedCue, parseBeatCueToken } from './beat-cues.js?v=20261103-paired-face-v1';
 export { sceneIdolId, buildStageRules, splitStageStory, parseStageTag, stageSnapshot, detectSceneCast } from './scene-protocol.js';
 
 function canonicalWords(table) {
@@ -63,9 +63,27 @@ function selectMotionFile(cue, catalog) {
     return null;
 }
 
+function faceFileClip(cue, catalog) {
+    return selectMotionFile({ file: cue?.faceFile }, catalog)?.face || '';
+}
+
+function semanticFaceClip(faceId, catalog, idolId) {
+    const faces = catalog.filter(item => (item.pairing || item.catalog?.pairing) === 'faceOnly' && item.face
+        && ['cmmn', idolId].includes(item.character || item.catalog?.character || ''));
+    const index = findFacePlaylistIndex(faces, faceId, { preferredCharacter: idolId, random: () => 0 });
+    return index >= 0 ? (faces[index]?.face || '') : '';
+}
+
+function withRequestedFace(item, cue, catalog, idolId) {
+    if (!item?.body || (!cue?.face && !cue?.faceFile)) return item;
+    const face = cue.faceFile ? faceFileClip(cue, catalog) : semanticFaceClip(cue.face, catalog, idolId);
+    if (!face) return item;
+    return { ...item, face, key: `${item.body}|${face}`, pairing: 'mixed' };
+}
+
 export function selectPortraitPerformance(cue, catalog, idolId = 'fktn', options = {}) {
     if (!cue || cue.mode === 'keep') return null;
-    if (cue.mode === 'file') return selectMotionFile(cue, catalog);
+    if (cue.mode === 'file') return withRequestedFace(selectMotionFile(cue, catalog), cue, catalog, idolId);
     const { eligible, bodies, pairing } = performanceCatalog(cue, catalog, idolId);
     const avoidBody = String(options.avoidBody || '');
     const avoidBodyKey = bodies.find(item => String(item.body || '') === avoidBody)?.stem
@@ -80,7 +98,16 @@ export function selectPortraitPerformance(cue, catalog, idolId = 'fktn', options
     });
     const body = bodies[bodyIndex];
     if (!body) return null;
+    if (cue.faceFile) {
+        const face = faceFileClip(cue, catalog);
+        if (face) return { ...body, key: `${body.body}|${face}`, face, pairing: 'mixed' };
+    }
     let face = body.face;
+    if (cue.mode === 'mixed' && cue.faceFile) {
+        face = faceFileClip(cue, catalog);
+        if (!face) return null;
+        return { ...body, key: `${body.body}|${face}`, face, pairing: 'mixed' };
+    }
     if (cue.mode === 'mixed') {
         const faces = eligible.filter(item => (item.pairing || item.catalog?.pairing) === 'faceOnly' && item.face);
         const avoidFace = String(options.avoidFace || '');
@@ -114,9 +141,10 @@ export function portraitPerformanceCandidates(cue, catalog, idolId = 'fktn') {
         preferPairing: pairing, preferredVariant: DEFAULT_MOTION_VARIANTS[idolId] || '',
     });
     const faces = eligible.filter(item => (item.pairing || item.catalog?.pairing) === 'faceOnly' && item.face);
+    const requestedFace = cue.faceFile ? selectMotionFile({ file: cue.faceFile }, catalog) : null;
     const choices = new Map();
     for (const index of indices) {
-        const subset = [bodies[index], ...faces];
+        const subset = [bodies[index], ...faces, ...(requestedFace ? [requestedFace] : [])];
         const first = selectPortraitPerformance(cue, subset, idolId, { random: () => 0 });
         if (!first) continue;
         choices.set(first.key, first);

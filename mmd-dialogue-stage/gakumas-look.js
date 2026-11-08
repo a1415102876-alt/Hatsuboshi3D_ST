@@ -1,4 +1,34 @@
 import * as THREE from './vendor/three/build/three.module.js';
+import { actorEnvironmentSample } from './gakumas-scene-core.js?v=20261105-light-range-v1';
+
+export { actorEnvironmentSample };
+
+const actorScenePosition = new THREE.Vector3();
+
+export function actorScenePoint(object, stage) {
+    const matrix = stage?.shared?.gkWorldToScene?.value;
+    if (!object?.getWorldPosition || !matrix?.isMatrix4) return null;
+    object.updateWorldMatrix?.(true, false);
+    object.getWorldPosition(actorScenePosition).applyMatrix4(matrix);
+    return [actorScenePosition.x, actorScenePosition.y, actorScenePosition.z];
+}
+
+export function createActorRoomUniforms() {
+    return {
+        gkActorSH: { value: Array.from({ length: 9 }, () => new THREE.Vector3()) },
+        gkGiScale: { value: 0 },
+        gkProbeOcclusion: { value: new THREE.Vector4(1, 1, 1, 1) },
+        gkProbeShadowChannel: { value: -1 },
+        gkActorProbeMap: { value: null },
+        gkHasActorProbe: { value: 0 },
+        gkActorProbeInfo: { value: new THREE.Vector4(1, 1, 1, 0) },
+        gkActorProbePosition: { value: new THREE.Vector3() },
+        gkActorProbeBoxMin: { value: new THREE.Vector3() },
+        gkActorProbeBoxMax: { value: new THREE.Vector3() },
+        gkActorProbeBoxProjection: { value: 0 },
+        gkActorProbeTint: { value: new THREE.Vector3(1, 1, 1) },
+    };
+}
 
 export const GAKUMAS_LOOK = Object.freeze({
     key: 0.9,
@@ -53,6 +83,70 @@ export function matcapKeyDirection(azimuth = GAKUMAS_LOOK.keyAzimuth, elevation 
         Math.sin(elevationRad),
         Math.cos(azimuthRad) * Math.cos(elevationRad),
     ).normalize();
+}
+
+export const ACTOR_ADDITIONAL_LIGHTS = 8;
+
+// Copies the active scene volume onto one character material. Additional
+// lights stay off when the volume scale is 0, which is how the exported
+// scenes gate them. Without a scene, eye tints return to white and the
+// caller-supplied key light is left alone.
+export function applySceneActorUniforms(uniforms, stage, sample = null) {
+    if (!uniforms) return uniforms;
+    const actor = stage?.actorLight || null;
+    const entries = (stage?.sceneLightEntries || []).slice(0, ACTOR_ADDITIONAL_LIGHTS);
+    if (uniforms.gkAddLightCount) uniforms.gkAddLightCount.value = entries.length;
+    if (uniforms.gkAddLightScale) uniforms.gkAddLightScale.value = actor?.additiveScale || 0;
+    if (uniforms.gkAddLightSpecularScale) uniforms.gkAddLightSpecularScale.value = actor?.additiveSpecularScale ?? 1;
+    if (uniforms.gkMatCapOffset) uniforms.gkMatCapOffset.value = actor?.matCapOffset ?? 0.3;
+    if (uniforms.gkShadeApply) uniforms.gkShadeApply.value = actor?.shadeApply ?? 1;
+    if (uniforms.gkMainLightWorld) uniforms.gkMainLightWorld.value = actor && actor.mainLightSpace > 0.5 ? 1 : 0;
+    if (uniforms.gkWorldToScene && stage?.shared?.gkWorldToScene) uniforms.gkWorldToScene.value.copy(stage.shared.gkWorldToScene.value);
+    entries.forEach((light, index) => {
+        uniforms.gkAddLightPosition.value[index].fromArray(light.position);
+        const [x, y, z] = light.direction;
+        const length = Math.hypot(x, y, z) || 1;
+        uniforms.gkAddLightDirection.value[index].set(x / length, y / length, z / length, light.specular);
+        uniforms.gkAddLightColor.value[index].fromArray(light.color);
+        uniforms.gkAddLightParams.value[index].fromArray(light.params);
+    });
+    const highlight = actor?.eyeHighlightColor || [1, 1, 1];
+    const reflection = actor?.eyeReflectionColor || [1, 1, 1];
+    if (uniforms.gkEyeHighlightColor) uniforms.gkEyeHighlightColor.value.setRGB(highlight[0], highlight[1], highlight[2]);
+    if (uniforms.gkEyeReflectionColor) uniforms.gkEyeReflectionColor.value.setRGB(reflection[0], reflection[1], reflection[2]);
+    if (actor?.hasMainLight && uniforms.gkLightDirection && uniforms.gkLightColor) {
+        uniforms.gkLightDirection.value.copy(matcapKeyDirection(actor.azimuth, actor.elevation));
+        uniforms.gkLightColor.value.setRGB(actor.color[0], actor.color[1], actor.color[2]);
+    }
+    bindActorRoom(uniforms, stage, sample);
+    return uniforms;
+}
+
+function bindActorRoom(uniforms, stage, sample) {
+    if (uniforms.gkActorSH) {
+        for (let index = 0; index < 9; index += 1) {
+            const rgb = sample?.sh?.[index] || [0, 0, 0];
+            uniforms.gkActorSH.value[index].set(rgb[0] || 0, rgb[1] || 0, rgb[2] || 0);
+        }
+    }
+    if (uniforms.gkGiScale) uniforms.gkGiScale.value = sample?.sh ? (Number(sample.giScale) || 0) : 0;
+    const occlusion = sample?.occlusion || [1, 1, 1, 1];
+    if (uniforms.gkProbeOcclusion) uniforms.gkProbeOcclusion.value.set(occlusion[0] || 0, occlusion[1] || 0, occlusion[2] || 0, occlusion[3] || 0);
+    if (uniforms.gkProbeShadowChannel) uniforms.gkProbeShadowChannel.value = Number.isFinite(sample?.shadowChannel) ? sample.shadowChannel : -1;
+    const tint = sample?.tint || [1, 1, 1];
+    if (uniforms.gkActorProbeTint) uniforms.gkActorProbeTint.value.set(tint[0] ?? 1, tint[1] ?? 1, tint[2] ?? 1);
+    const loaded = sample && sample.probeIndex >= 0 ? stage?.probes?.[sample.probeIndex] : null;
+    const atlas = loaded?.probe?.atlas;
+    const ready = Boolean(loaded?.texture && atlas);
+    if (uniforms.gkHasActorProbe) uniforms.gkHasActorProbe.value = ready ? 1 : 0;
+    if (uniforms.gkActorProbeMap) uniforms.gkActorProbeMap.value = ready ? loaded.texture : null;
+    if (!ready || !uniforms.gkActorProbeInfo) return;
+    const intensity = (atlas.rgbmRange || 1) * (loaded.probe.intensity ?? 1) * (stage?.sidecar?.environment?.reflectionIntensity ?? 1);
+    uniforms.gkActorProbeInfo.value.set(atlas.levels || 1, atlas.levelHeight || 1, intensity, 0);
+    uniforms.gkActorProbePosition.value.fromArray(loaded.probe.position || [0, 0, 0]);
+    uniforms.gkActorProbeBoxMin.value.fromArray(loaded.box?.min || [0, 0, 0]);
+    uniforms.gkActorProbeBoxMax.value.fromArray(loaded.box?.max || [0, 0, 0]);
+    uniforms.gkActorProbeBoxProjection.value = loaded.probe.boxProjection ? 1 : 0;
 }
 
 export function applyGakumasLookUniforms(uniforms, look = GAKUMAS_LOOK) {
@@ -142,7 +236,13 @@ void main() {
         gkSample(vUv - vec2(0.0, texel.y))
     ) * 0.25;
     vec3 highlight = max(bloom - vec3(gkLookKnee), vec3(0.0));
-    vec3 color = base + highlight * gkLookBloom;
+    vec2 streak = vec2(texel.x, texel.y * 0.35) * 3.0;
+    vec2 cross = vec2(-streak.y, streak.x);
+    vec3 star = gkSample(vUv + streak) + gkSample(vUv - streak);
+    star += gkSample(vUv + streak * 2.0) + gkSample(vUv - streak * 2.0);
+    star += gkSample(vUv + cross) + gkSample(vUv - cross);
+    vec3 starHighlight = max(star / 6.0 - vec3(gkLookKnee), vec3(0.0));
+    vec3 color = base + highlight * gkLookBloom + starHighlight * gkLookBloom * 0.55;
     float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
     color = mix(vec3(luma), color, gkLookSaturation);
     color = mix(color, (color - 0.5) * gkLookContrast + 0.5, smoothstep(0.14, 0.42, luma));

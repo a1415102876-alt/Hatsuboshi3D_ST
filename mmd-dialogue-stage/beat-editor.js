@@ -1,11 +1,12 @@
 import { actorPoseFromObject, cameraPoseFromObject } from './scene-free-look.js?v=20261102-actor-pose-v1';
-import { BeatPlayerApp } from './beat-player.js?v=20261103-fktn-profile-r2-v1';
+import { BeatPlayerApp } from './beat-player.js?v=20261104-clock-transition-v1';
 import { BEAT_BACKGROUND_NAMES } from './beat-backgrounds.js?v=20261017-browser-cache-v1';
 import { BEAT_SCENE_ASSETS } from './beat-scene-assets.js?v=20261027-scene-library-v1';
 import { BEAT_CUES, BEAT_EFFECTS, BEAT_FACES, BEAT_OVERLAYS, BEAT_POSITIONS, BEAT_SHOTS, BEAT_CAMERA_PRESETS, BEAT_SPEAKER_NAMES, beatActorId } from './beat-player-core.js?v=20261102-krnh-3d-v1';
-import { BEAT_CUE_ALIASES, beatMotionFileKey, isBeatMotionFile } from './beat-cues.js?v=20261101-motion-file-v1';
+import { BEAT_BODY_CUE_SPECS, BEAT_CUE_ALIASES, beatMotionFileKey, isBeatMotionFile, isBeatPairedCue } from './beat-cues.js?v=20261103-paired-face-v1';
 import { MOTION_BUCKETS } from './core.js?v=20261011-stage-cue-rules-v4';
-import { createEditorBeat, cloneEditorBeat, moveBeat, parseBeatEditorSource, serializeBeatEditorScript, updateBeat, validateEditorDocument } from './beat-editor-model.js?v=20261103-pose-move-v2';
+import { createEditorBeat, cloneEditorBeat, moveBeat, parseBeatEditorSource, serializeBeatEditorScript, updateBeat, validateEditorDocument } from './beat-editor-model.js?v=20261104-clock-transition-v1';
+import { createActorPoseGizmo } from './beat-actor-gizmo.js?v=20261103-actor-gizmo-v1';
 
 const qs = (id) => document.getElementById(id);
 const unique = (values) => [...new Set((values || []).map(value => String(value ?? '').trim()).filter(Boolean))];
@@ -166,6 +167,46 @@ function syncMotionPicker(cue) {
     if (select) select.value = match ? match.value : '';
 }
 
+function renderFaceFiles() {
+    const select = qs('beatEditorFaceFile');
+    if (!select) return;
+    const items = motionCatalog.filter(item => item.bucket === 'faceOnly');
+    select.replaceChildren(new Option(items.length ? '（不另选表情文件）' : '表情列表载入中', ''));
+    items.forEach(item => {
+        const suffix = item.character && item.character !== 'cmmn' ? ` · ${item.character}` : '';
+        const option = new Option(`${item.title}${suffix} ${item.label}`, item.label);
+        option.dataset.key = beatMotionFileKey(item.label);
+        select.append(option);
+    });
+    syncFaceFile(state.document.beats[state.selectedIndex]?.face);
+}
+
+function syncFaceFile(face) {
+    const select = qs('beatEditorFaceFile');
+    if (!select) return;
+    const key = beatMotionFileKey(isBeatMotionFile(face) ? face : '');
+    const match = [...select.options].find(option => option.dataset.key && option.dataset.key === key);
+    select.value = match ? match.value : '';
+}
+
+function cueKeepsSeparateFace(cue) {
+    const token = String(cue || '').trim().toLowerCase();
+    if (!token) return false;
+    if (isBeatPairedCue(token)) return true;
+    if (isBeatMotionFile(cue)) return motionByKey.get(beatMotionFileKey(cue))?.bucket !== 'faceOnly';
+    return token === 'talk' || token === 'shy' || Boolean(BEAT_BODY_CUE_SPECS[token]);
+}
+
+function applyMotionFile(label) {
+    const entry = motionByKey.get(beatMotionFileKey(label));
+    const beat = state.document.beats[state.selectedIndex];
+    if (entry?.bucket === 'faceOnly' && cueKeepsSeparateFace(beat?.cue)) {
+        mutate({ face: label });
+        return;
+    }
+    mutate({ cue: label });
+}
+
 async function loadMotionCatalog() {
     try {
         const response = await fetch(new URL('./gakumas-motion-map.json', import.meta.url));
@@ -194,6 +235,7 @@ async function loadMotionCatalog() {
             }
         }
         renderMotionFiles();
+        renderFaceFiles();
         renderAll();
     } catch (error) {
         const select = qs('beatEditorMotionFile');
@@ -232,10 +274,12 @@ function renderProperties() {
     const beat = state.document.beats[state.selectedIndex];
     const name = qs('beatEditorSelection'); if (name) name.textContent = beat ? `#${state.selectedIndex + 1}` : '—';
     if (!beat) return;
-    const map = { beatEditorId: beat.id, beatEditorSpeakerField: beat.speaker, beatEditorCue: beat.cue, beatEditorFace: beat.face, beatEditorBackground: beat.background, beatEditorPosition: beat.position, beatEditorLook: beat.look, beatEditorShot: beat.shot, beatEditorCostume: beat.costume, beatEditorCamera: beat.camera, beatEditorOverlays: beat.overlay, beatEditorEffects: beat.effects, beatEditorWait: beat.wait, beatEditorTextField: beat.text, beatEditorTts: beat.ttsText };
+    const map = { beatEditorId: beat.id, beatEditorSpeakerField: beat.speaker, beatEditorCue: beat.cue, beatEditorFace: isBeatMotionFile(beat.face) ? '' : beat.face, beatEditorBackground: beat.background, beatEditorPosition: beat.position, beatEditorLook: beat.look, beatEditorShot: beat.shot, beatEditorCostume: beat.costume, beatEditorCamera: beat.camera, beatEditorOverlays: beat.overlay, beatEditorEffects: beat.effects, beatEditorWait: beat.wait, beatEditorTransition: beat.transition, beatEditorTextField: beat.text, beatEditorTts: beat.ttsText };
     Object.entries(map).forEach(([id, value]) => setField(qs(id), value));
     syncMotionPicker(beat.cue);
+    syncFaceFile(beat.face);
     syncCameraPoseFields();
+    syncLensFields();
     syncActorPoseFields();
     syncCameraMoveFields();
     syncActorMoveFields();
@@ -327,6 +371,7 @@ async function refreshPreview({ silent = false, needsResources = true } = {}) {
         if (!ready) { setStatus('资源加载失败，请检查背景或角色资源。', 'warn'); return; }
         await app.goTo(Math.min(state.selectedIndex, Math.max(0, app.compiled.beats.length - 1)), { autoplay: false });
         syncCameraPoseFields();
+        refreshActorGizmo();
         setStatus(`已预览第 ${state.selectedIndex + 1} 段`);
     } catch (error) { if (token === state.previewToken) setStatus(`预览失败：${error?.message || error}`, 'warn'); }
 }
@@ -345,7 +390,7 @@ function importSource(source) {
 }
 
 async function copyExport() { const script = serializeAndStore(); try { await navigator.clipboard.writeText(script); setStatus('脚本已复制到剪贴板。'); } catch { setStatus('脚本已生成，请从导入框复制。'); } }
-function returnToSandbox() { const script = serializeAndStore(); sessionStorage.setItem('hatsuBeatEditorResult', script); const target = sessionStorage.getItem('hatsuBeatEditorReturn') || './sandbox-home.html'; window.location.href = target; }
+function returnToSandbox() { const script = serializeAndStore(); sessionStorage.setItem('hatsuBeatEditorResult', script); const target = sessionStorage.getItem('hatsuBeatEditorReturn') || './gakumas-player.html'; window.location.href = target; }
 function exportScript() {
     const script = serializeAndStore();
     sessionStorage.setItem('hatsuBeatEditorResult', script);
@@ -355,12 +400,16 @@ function exportScript() {
 
 const CAMERA_POSE_FIELDS = [['beatEditorCamX', 'x'], ['beatEditorCamY', 'y'], ['beatEditorCamZ', 'z'], ['beatEditorCamYaw', 'yaw'], ['beatEditorCamPitch', 'pitch']];
 let cameraPoseHistoryOpen = false;
+let lensHistoryOpen = false;
 
 function liveBeatCamera() {
     const pool = app.scenePool;
-    if (pool?.freeLook?.enabled && pool.freeLook.readPose) return pool.freeLook.readPose();
-    const camera = pool?.activePlayer?.camera || (pool?.fallbackStage ? pool.fallbackCamera : null);
-    return camera ? cameraPoseFromObject(camera) : null;
+    if (pool?.freeLook?.enabled) {
+        const posed = pool.freeLook.readPose?.();
+        if (posed) return posed;
+    }
+    const found = app.sceneCamera?.();
+    return found?.camera ? cameraPoseFromObject(found.camera) : null;
 }
 
 function syncCameraPoseFields() {
@@ -381,6 +430,53 @@ function syncCameraPoseFields() {
         const digits = key === 'yaw' || key === 'pitch' ? 1 : 3;
         field.value = Number(pose[key]).toFixed(digits);
     }
+}
+
+function syncLensFields() {
+    const beat = state.document.beats[state.selectedIndex];
+    const focal = qs('beatEditorFocal');
+    const toggle = qs('beatEditorDof');
+    const panel = qs('beatEditorDofPanel');
+    const aperture = qs('beatEditorDofAperture');
+    const focus = qs('beatEditorDofFocus');
+    const dof = beat?.dof || null;
+    if (focal && document.activeElement !== focal) focal.value = beat?.focal ? String(Math.round(beat.focal * 10) / 10) : '';
+    if (toggle && document.activeElement !== toggle) toggle.checked = Boolean(dof);
+    if (panel) panel.hidden = !dof;
+    if (aperture && document.activeElement !== aperture) aperture.value = dof ? String(Math.round(dof.aperture * 10) / 10) : '';
+    if (focus && document.activeElement !== focus) focus.value = Number.isFinite(dof?.focus) ? String(Math.round(dof.focus * 1000) / 1000) : '';
+}
+
+function commitLens({ history = false } = {}) {
+    if (!state.document.beats[state.selectedIndex]) return;
+    const focalText = String(qs('beatEditorFocal')?.value ?? '').trim();
+    const focal = focalText === '' ? null : Number(focalText);
+    if (focalText !== '' && !Number.isFinite(focal)) return;
+    let dof = null;
+    if (qs('beatEditorDof')?.checked) {
+        const aperture = Number(qs('beatEditorDofAperture')?.value);
+        const focusText = String(qs('beatEditorDofFocus')?.value ?? '').trim();
+        dof = { aperture: Number.isFinite(aperture) && aperture > 0 ? aperture : 8 };
+        if (focusText) {
+            const focus = Number(focusText);
+            if (!Number.isFinite(focus) || focus <= 0) return;
+            dof.focus = focus;
+        }
+    }
+    if (history) pushHistory();
+    state.document = updateBeat(state.document, state.selectedIndex, { focal, dof });
+    setDirty(true);
+    serializeAndStore();
+    const saved = state.document.beats[state.selectedIndex] || {};
+    const beat = app.compiled?.beats?.[state.selectedIndex];
+    if (beat) {
+        if (saved.focal) beat.focal = saved.focal;
+        else delete beat.focal;
+        if (saved.dof) beat.dof = { ...saved.dof };
+        else delete beat.dof;
+        app.applyShot(beat);
+    }
+    syncLensFields();
 }
 
 function commitCameraPose(pose, { history = false } = {}) {
@@ -427,8 +523,9 @@ qs('beatEditorNewBtn').addEventListener('click', addBeat); qs('beatEditorDeleteB
 qs('beatEditorImportBtn').addEventListener('click', () => importSource(qs('beatEditorImportSource').value));
 qs('beatEditorFile').addEventListener('change', async event => { const file = event.target.files?.[0]; if (file) importSource(await file.text()); event.target.value = ''; });
 qs('beatEditorMotionBucket')?.addEventListener('change', renderMotionFiles);
-qs('beatEditorMotionFile')?.addEventListener('change', event => { if (event.currentTarget.value) mutate({ cue: event.currentTarget.value }); });
-qs('beatEditorMotionName')?.addEventListener('change', event => { const value = event.currentTarget.value.trim(); if (value) mutate({ cue: value }); });
+qs('beatEditorMotionFile')?.addEventListener('change', event => { if (event.currentTarget.value) applyMotionFile(event.currentTarget.value); });
+qs('beatEditorMotionName')?.addEventListener('change', event => { const value = event.currentTarget.value.trim(); if (value) applyMotionFile(value); });
+qs('beatEditorFaceFile')?.addEventListener('change', event => mutate({ face: event.currentTarget.value }));
 qs('beatEditorFreeLook')?.addEventListener('change', () => {
     const toggle = qs('beatEditorFreeLook');
     if (!toggle) return;
@@ -471,7 +568,12 @@ qs('beatEditorCameraMove')?.addEventListener('change', () => {
         commitCameraMove(null, { history: true });
         return;
     }
-    const pose = liveBeatCamera();
+    let pose = liveBeatCamera();
+    if (!pose) {
+        const beat = app.compiled?.beats?.[state.selectedIndex];
+        if (beat) app.applyShot(beat);
+        pose = liveBeatCamera();
+    }
     if (!pose) {
         toggle.checked = false;
         setStatus('当前画面还没有 3D 摄像机，不能写入运动。', 'warn');
@@ -479,6 +581,12 @@ qs('beatEditorCameraMove')?.addEventListener('change', () => {
     }
     cameraMoveHistoryOpen = false;
     commitCameraMove({ from: pose, to: { ...pose }, duration: 1.2 }, { history: true });
+});
+qs('beatEditorCameraWalk')?.addEventListener('change', () => {
+    const move = withCameraWalk(moveFromFields(CAMERA_MOVE_FIELDS));
+    if (!move) return;
+    cameraMoveHistoryOpen = false;
+    commitCameraMove(move, { history: true });
 });
 qs('beatEditorActorMove')?.addEventListener('change', () => {
     const toggle = qs('beatEditorActorMove');
@@ -497,6 +605,25 @@ qs('beatEditorActorMove')?.addEventListener('change', () => {
     actorMoveHistoryOpen = false;
     commitActorMove({ from: pose, to: { ...pose }, duration: 1.2 }, { history: true });
 });
+qs('beatEditorDof')?.addEventListener('change', () => {
+    const toggle = qs('beatEditorDof');
+    const aperture = qs('beatEditorDofAperture');
+    if (toggle?.checked && aperture && !String(aperture.value).trim()) aperture.value = '8';
+    lensHistoryOpen = false;
+    commitLens({ history: true });
+});
+for (const id of ['beatEditorFocal', 'beatEditorDofAperture', 'beatEditorDofFocus']) {
+    const field = qs(id);
+    field?.addEventListener('input', () => {
+        if (!lensHistoryOpen) {
+            lensHistoryOpen = true;
+            commitLens({ history: true });
+            return;
+        }
+        commitLens();
+    });
+    field?.addEventListener('blur', () => { lensHistoryOpen = false; syncLensFields(); });
+}
 qs('beatEditorStageWidth').addEventListener('input', event => updatePreviewSetting('stageWidth', event.currentTarget.value));
 qs('beatEditorDialogueWidth').addEventListener('input', event => updatePreviewSetting('dialogueWidth', event.currentTarget.value));
 for (const [id] of CAMERA_POSE_FIELDS) {
@@ -533,16 +660,20 @@ function syncActorPoseFields() {
     if (panel) panel.hidden = !pose;
     const position = qs('beatEditorPosition');
     if (position) position.disabled = Boolean(pose);
-    if (!pose) return;
+    if (!pose) {
+        refreshActorGizmo();
+        return;
+    }
     for (const [id, key] of ACTOR_POSE_FIELDS) {
         const field = qs(id);
         if (!field || document.activeElement === field) continue;
         const digits = key === 'yaw' ? 1 : 3;
         field.value = Number(pose[key]).toFixed(digits);
     }
+    refreshActorGizmo();
 }
 
-function commitActorPose(pose, { history = false } = {}) {
+function commitActorPose(pose, { history = false, apply = true } = {}) {
     if (!state.document.beats[state.selectedIndex]) return;
     if (history) pushHistory();
     state.document = updateBeat(state.document, state.selectedIndex, { actorPose: pose });
@@ -550,7 +681,7 @@ function commitActorPose(pose, { history = false } = {}) {
     serializeAndStore();
     const saved = state.document.beats[state.selectedIndex]?.actorPose || null;
     const beat = app.compiled?.beats?.[state.selectedIndex];
-    if (beat) {
+    if (apply && beat) {
         if (saved) beat.actorPose = { ...saved };
         else delete beat.actorPose;
         app.applyShot(beat);
@@ -627,8 +758,10 @@ function commitCameraMove(move, { history = false } = {}) {
     const saved = state.document.beats[state.selectedIndex]?.cameraMove || null;
     const beat = app.compiled?.beats?.[state.selectedIndex];
     if (beat) {
-        if (saved) beat.cameraMove = { from: { ...saved.from }, to: { ...saved.to }, duration: saved.duration };
-        else delete beat.cameraMove;
+        if (saved) {
+            beat.cameraMove = { from: { ...saved.from }, to: { ...saved.to }, duration: saved.duration };
+            if (saved.walk) beat.cameraMove.walk = true;
+        } else delete beat.cameraMove;
         app.applyShot(beat);
     }
     syncCameraMoveFields();
@@ -650,8 +783,17 @@ function commitActorMove(move, { history = false } = {}) {
     syncActorMoveFields();
 }
 
+function withCameraWalk(move) {
+    if (!move) return null;
+    if (qs('beatEditorCameraWalk')?.checked) move.walk = true;
+    return move;
+}
+
 function syncCameraMoveFields() {
-    syncMoveFields(state.document.beats[state.selectedIndex]?.cameraMove || null, 'beatEditorCameraMove', 'beatEditorCameraMovePanel', CAMERA_MOVE_FIELDS);
+    const move = state.document.beats[state.selectedIndex]?.cameraMove || null;
+    syncMoveFields(move, 'beatEditorCameraMove', 'beatEditorCameraMovePanel', CAMERA_MOVE_FIELDS);
+    const walk = qs('beatEditorCameraWalk');
+    if (walk && document.activeElement !== walk) walk.checked = Boolean(move?.walk);
 }
 
 function syncActorMoveFields() {
@@ -674,8 +816,83 @@ function bindMoveInputs(fields, read, commit, historyFlag) {
         field?.addEventListener('blur', () => { historyFlag.open = false; });
     }
 }
-bindMoveInputs(CAMERA_MOVE_FIELDS, () => moveFromFields(CAMERA_MOVE_FIELDS), commitCameraMove, { get open() { return cameraMoveHistoryOpen; }, set open(value) { cameraMoveHistoryOpen = value; } });
+bindMoveInputs(CAMERA_MOVE_FIELDS, () => withCameraWalk(moveFromFields(CAMERA_MOVE_FIELDS)), commitCameraMove, { get open() { return cameraMoveHistoryOpen; }, set open(value) { cameraMoveHistoryOpen = value; } });
 bindMoveInputs(ACTOR_MOVE_FIELDS, () => moveFromFields(ACTOR_MOVE_FIELDS), commitActorMove, { get open() { return actorMoveHistoryOpen; }, set open(value) { actorMoveHistoryOpen = value; } });
+
+let actorGizmoMode = 'translate';
+let actorGizmoHistory = false;
+let actorGizmoOrigin = null;
+let actorGizmoPlayer = null;
+const actorGizmo = createActorPoseGizmo(qs('beatEditorStage'), {
+    onDragStart() {
+        actorGizmoOrigin = state.document.beats[state.selectedIndex]?.actorPose
+            ? { ...state.document.beats[state.selectedIndex].actorPose }
+            : null;
+        actorGizmoHistory = false;
+        speakerPlayer()?.attention?.hold(true);
+        app.stopPoseMove();
+    },
+    onChange() {
+        const pose = poseFromGizmo();
+        if (!pose) return;
+        if (!actorGizmoHistory) {
+            actorGizmoHistory = true;
+            commitActorPose(pose, { history: true, apply: false });
+        } else {
+            commitActorPose(pose, { apply: false });
+        }
+        speakerPlayer()?.renderFrame?.();
+    },
+    onDragEnd({ cancelled = false } = {}) {
+        if (cancelled && actorGizmoHistory) state.undo.pop();
+        actorGizmoHistory = false;
+        const player = speakerPlayer();
+        const pose = cancelled ? actorGizmoOrigin : poseFromGizmo();
+        if (pose) commitActorPose(pose, { apply: true });
+        player?.attention?.hold(false);
+        player?.attention?.update?.(1);
+        player?.renderFrame?.();
+        actorGizmoOrigin = null;
+    },
+});
+
+function speakerPlayer() {
+    const beat = state.document.beats[state.selectedIndex];
+    const idolId = beatActorId(beat?.speaker);
+    return idolId ? app.director?.entries?.get(idolId)?.player || null : null;
+}
+
+function poseFromGizmo() {
+    const player = speakerPlayer();
+    const live = player?.model ? actorPoseFromObject(player.model) : null;
+    if (!live) return null;
+    const saved = state.document.beats[state.selectedIndex]?.actorPose;
+    if (actorGizmoMode === 'translate') return { x: live.x, y: live.y, z: live.z, yaw: Number(saved?.yaw) || 0 };
+    return { x: live.x, y: live.y, z: live.z, yaw: live.yaw - (player.attention?.lookYawDegrees?.() || 0) };
+}
+
+function setActorGizmoMode(mode) {
+    actorGizmoMode = mode === 'rotate' ? 'rotate' : 'translate';
+    actorGizmo.setMode(actorGizmoMode);
+    qs('beatEditorActorGizmoMove')?.setAttribute('aria-pressed', String(actorGizmoMode === 'translate'));
+    qs('beatEditorActorGizmoRotate')?.setAttribute('aria-pressed', String(actorGizmoMode === 'rotate'));
+    speakerPlayer()?.renderFrame?.();
+}
+
+function refreshActorGizmo() {
+    if (actorGizmo.dragging) return;
+    const beat = state.document.beats[state.selectedIndex];
+    const player = speakerPlayer();
+    const active = Boolean(beat?.actorPose && player?.model && player?.camera && player?.renderer);
+    if (actorGizmoPlayer && actorGizmoPlayer !== player) actorGizmoPlayer.afterRender = null;
+    actorGizmoPlayer = active ? player : null;
+    if (actorGizmoPlayer) actorGizmoPlayer.afterRender = () => actorGizmo.render(actorGizmoPlayer.renderer, actorGizmoPlayer.camera);
+    actorGizmo.setEnabled(active, player?.model, player?.camera);
+    if (active) player.renderFrame();
+}
+
+qs('beatEditorActorGizmoMove')?.addEventListener('click', () => setActorGizmoMode('translate'));
+qs('beatEditorActorGizmoRotate')?.addEventListener('click', () => setActorGizmoMode('rotate'));
 qs('beatEditorPreviewReset').addEventListener('click', () => { state.previewSettings = { ...DEFAULT_PREVIEW_SETTINGS }; savePreviewSettings(); applyPreviewSettings(); });
 qs('beatEditorExportBtn').addEventListener('click', exportScript); qs('beatEditorBackBtn').addEventListener('click', returnToSandbox);
 void loadMotionCatalog();

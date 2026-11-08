@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f4d7b0">
   <title>初星日常沙盒</title>
-  <link rel="stylesheet" href="./beat-player.css?v=20261027-bg-zoom-v2">
-  <link rel="stylesheet" href="./sandbox-home.css?v=20261030-landscape-nav-v6">
+  <link rel="stylesheet" href="./beat-player.css?v=20261106-hide-2d-floor-v1">
+  <link rel="stylesheet" href="./sandbox-home.css?v=20261104-gakumas-player-v1">
   <script type="importmap">
     {
       "imports": {
@@ -23,18 +23,7 @@
       <p>选择要担当的偶像</p>
       <div id="sandboxStartIdols" class="sandbox-start-idols" role="listbox" aria-label="担当偶像"></div>
       <button id="sandboxStartBtn" class="sandbox-start-go" type="button">开始育成</button>
-      <button id="sandboxStartWeirdScriptBtn" class="sandbox-start-weird-script" type="button">怪文书模式</button>
-    </section>
-    <section id="sandboxWeirdScriptView" class="sandbox-weird-script-view" hidden aria-label="怪文书制作">
-      <header class="sandbox-weird-script-heading"><div><small>BEAT SCRIPT STUDIO</small><h2>怪文书制作</h2><p>可以交给 AI 生成，也可以直接粘贴完整 Beat，解析资源后开始演出。</p></div><button id="sandboxWeirdScriptBackBtn" type="button">返回担当选择</button></header>
-      <div class="sandbox-weird-script-modes" role="group" aria-label="生成模式">
-        <button id="sandboxWeirdScriptModeFull" type="button" data-weird-mode="full" aria-pressed="true">全文案</button>
-        <button id="sandboxWeirdScriptModeExpand" type="button" data-weird-mode="expand" aria-pressed="false">AI 扩写</button>
-        <button id="sandboxWeirdScriptModeDirect" type="button" data-weird-mode="direct" aria-pressed="false">直接演出</button>
-      </div>
-      <textarea id="sandboxWeirdScriptInput" rows="7" maxlength="200000" placeholder="粘贴完整文案，或写下一个点子让 AI 扩写"></textarea>
-      <div class="sandbox-weird-script-actions"><button id="sandboxWeirdScriptGenerateBtn" type="button">解析并生成 Beat</button><button id="sandboxWeirdScriptContinueBtn" type="button" hidden>继续生成</button><button id="sandboxWeirdScriptEditorBtn" type="button">打开可视化编辑器</button></div>
-      <p id="sandboxWeirdScriptStatus" class="sandbox-weird-script-status" role="status"></p>
+      <a id="sandboxStartPlayerLink" class="sandbox-start-player-link" href="./gakumas-player.html">怪文书制作 · Gakumas Player</a>
     </section>
     <header class="sandbox-topbar">
       <div class="sandbox-day-chip"><small>DAY</small><strong id="sandboxDay">1</strong></div>
@@ -79,7 +68,6 @@
               <img id="beatSpeakerPortrait" class="beat-speaker-portrait" hidden alt="" draggable="false">
               <div class="speaker-plate"><strong id="beatSpeaker">藤田琴音</strong></div>
               <p id="beatText">正在准备主页……</p>
-              <button id="sandboxWeirdScriptAutoBtn" class="sandbox-weird-auto" type="button" aria-pressed="false">自动</button>
               <button id="advanceBeatBtn" class="dialogue-advance" type="button" aria-label="下一段"></button>
             </div>
             <div class="sandbox-stage-commands">
@@ -316,8 +304,8 @@
 
   <textarea id="beatScript" hidden></textarea>
   <span id="beatProgress" hidden></span><span id="beatShot" hidden></span><span id="beatStatus" hidden></span><ul id="beatDiagnostics" hidden></ul>
-  <script src="../hatsu-produce-local/fish-tts.js?v=20261027-name-dict-v1"></script>
+  <script src="../hatsu-produce-local/fish-tts.js?v=20261106-tts-host-v1"></script>
   <script src="../hatsu-produce-local/playlist-data.js?v=20261027-phone-v1"></script>
-      <script type="module" src="./sandbox/sandbox-home.js?v=20261103-fktn-profile-r2-v1&amp;placement=20261026-v3&amp;presence=20261026-v1"></script>
+      <script type="module" src="./sandbox/sandbox-home.js?v=20261107-chat-quiet-v1&amp;placement=20261026-v3&amp;presence=20261026-v1"></script>
 </body>
 </html>
