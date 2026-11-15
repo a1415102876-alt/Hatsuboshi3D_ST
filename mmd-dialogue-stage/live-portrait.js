@@ -21,10 +21,10 @@ import { GAKUMAS_TEXTURE_KINDS, GAKUMAS_ACTIVE_TEXTURE_KINDS, selectMaterialText
 import { injectActorShader } from './gakumas-shader.js?v=20261109-actor-light-v3';
 import { actorStencilState, classifyActorPass, placeCharacterShadowLight, shouldCastCharacterShadow, shouldReceiveCharacterShadow } from './gakumas-passes.js?v=20261024-crowd-budget-v1';
 import { HairCoverStage } from './gakumas-hair-cover.js?v=20261109-actor-light-v3';
-import { ACTOR_ADDITIONAL_LIGHTS, GAKUMAS_LOOK, actorEnvironmentSample, actorScenePoint, applyGakumasLookUniforms, applySceneActorUniforms, createActorRoomUniforms, createGakumasLookUniformValues, matcapKeyDirection } from './gakumas-look.js?v=20261114-sun-shadow-v1';
+import { ACTOR_ADDITIONAL_LIGHTS, GAKUMAS_LOOK, actorEnvironmentSample, actorScenePoint, applyGakumasLookUniforms, applySceneActorUniforms, createActorRoomUniforms, createGakumasLookUniformValues, matcapKeyDirection } from './gakumas-look.js?v=20261115-lamp-taa-v3';
 import { aaLevel } from './gakumas-aa.js?v=20261105-aa-level-v1';
-import { setCaptureMotionBlur } from './gakumas-post.js?v=20261114-sun-shadow-v1';
-import { StageRenderer } from './stage-renderer.js?v=20261114-sun-shadow-v1';
+import { setCaptureMotionBlur } from './gakumas-post.js?v=20261115-lamp-taa-v3';
+import { StageRenderer } from './stage-renderer.js?v=20261115-lamp-taa-v3';
 import { motionFromPositions } from './gakumas-taa-motion.js?v=20261027-motion-aware-taa-v1';
 import { backgroundDepthBlur, backgroundPanAmount, stagePlateCover, zoomPlateCover } from './beat-player-core.js?v=20261110-hkne-3d-v1';
 import { hasGakumasVertexColorAttribute } from './gakumas-outline.js?v=20260909-outline1';
@@ -51,8 +51,8 @@ import { loadResourceLibrary } from './asset-runtime.js?v=20261114-manifest-fix-
 import { filterPreferredSitItems } from './seated-posture.js?v=20261027-seated-rollback-v1';
 import { createPerformanceBucket, recordPerformanceSample, snapshotPerformanceBucket } from './performance-monitor-core.js?v=20261030-perf-diagnostic-v2';
 import { phonePropForIdol, propVisibilityForCue, resolvePropAnchorName } from './stage-props.js';
-import { collectSceneTextures, downscaleTextureSources } from './portrait-texture-budget.js?v=20261108-texture-budget-v1';
-import { collectPostTargets, estimateImageTextureBytes, estimateRendererResources } from './gpu-resource-estimator.js?v=20261112-single-renderer-v1';
+import { collectSceneTextures, downscaleTextureSources } from './portrait-texture-budget.js?v=20261115-game-bloom-v2';
+import { collectPostTargets, estimateImageTextureBytes, estimateRendererResources } from './gpu-resource-estimator.js?v=20261115-game-bloom-v2';
 
 function portraitMotionLoops(item) {
     const family = item?.family || item?.catalog?.family || '';

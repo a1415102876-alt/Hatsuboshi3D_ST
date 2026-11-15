@@ -1,6 +1,6 @@
 const POST_TARGET_NAMES = [
     'target', 'color', 'msaa', 'history', 'velocityTarget', 'bloomA', 'bloomB',
-    'softA', 'softB', 'dofTarget', 'spaceA', 'spaceB', 'spaceFull', 'bloomPyramid', 'layerTarget',
+    'softA', 'softB', 'dofTarget', 'spaceA', 'spaceB', 'spaceFull', 'bloomDown', 'bloomUp', 'diffusionA', 'diffusionB', 'layerTarget',
 ];
 
 function textureBytesPerPixel(texture, three) {

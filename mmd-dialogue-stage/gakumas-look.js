@@ -1,5 +1,5 @@
 import * as THREE from './vendor/three/build/three.module.js';
-import { actorEnvironmentSample } from './gakumas-scene-core.js?v=20261114-sun-shadow-v1';
+import { actorEnvironmentSample } from './gakumas-scene-core.js?v=20261115-lamp-taa-v3';
 import { resetRendererCanvasViewport } from './stage-renderer-core.js?v=20261112-2d-plate-grade-v1';
 
 export { actorEnvironmentSample };

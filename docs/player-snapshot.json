@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-15T11:54:27.142Z",
+  "generatedAt": "2026-11-15T17:52:43.372Z",
   "source": "G:\\SillyTavern\\gakumas-player",
   "preserved": [
     "index.html",
@@ -13,8 +13,25 @@
   ],
   "frontendAssets": 16,
   "changed": [
-    "mmd-dialogue-stage/gakumas-color-grade.js",
-    "mmd-dialogue-stage/tests/scene-grade-lut.test.mjs",
-    "mmd-dialogue-stage/tests/fixtures/changing-room-lut-samples.json"
+    "mmd-dialogue-stage/gakumas-taa-velocity.js",
+    "mmd-dialogue-stage/portrait-texture-budget.js",
+    "mmd-dialogue-stage/gpu-resource-estimator.js",
+    "mmd-dialogue-stage/beat-scene-pool.js",
+    "mmd-dialogue-stage/stage-renderer.js",
+    "mmd-dialogue-stage/gakumas-post.js",
+    "mmd-dialogue-stage/gakumas-look.js",
+    "mmd-dialogue-stage/live-portrait.js",
+    "mmd-dialogue-stage/beat-player.js",
+    "mmd-dialogue-stage/beat-editor.js",
+    "mmd-dialogue-stage/gakumas-player.html",
+    "mmd-dialogue-stage/beat-editor.html",
+    "mmd-dialogue-stage/timeline-editor.html",
+    "mmd-dialogue-stage/timeline-editor.js",
+    "mmd-dialogue-stage/gakumas-scene-core.js",
+    "mmd-dialogue-stage/gakumas-scene.js",
+    "mmd-dialogue-stage/notices.json",
+    "mmd-dialogue-stage/gakumas-player/gakumas-player.js",
+    "mmd-dialogue-stage/tests/scene-post.test.mjs",
+    "mmd-dialogue-stage/tests/game-bloom.test.mjs"
   ]
 }

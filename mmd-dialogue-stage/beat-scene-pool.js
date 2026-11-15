@@ -1,11 +1,11 @@
 import * as THREE from 'three';
-import { GakumasSceneStage } from './gakumas-scene.js?v=20261114-sun-shadow-v1';
-import { GakumasPostPass } from './gakumas-post.js?v=20261114-sun-shadow-v1';
+import { GakumasSceneStage } from './gakumas-scene.js?v=20261115-lamp-taa-v3';
+import { GakumasPostPass } from './gakumas-post.js?v=20261115-lamp-taa-v3';
 import { isBeatScene, resolveBeatBackgroundAsset, sceneAssetUrl } from './beat-background-assets.js?v=20261108-chat-clock-v1';
 import { applyCameraFocal, applyCameraPose, SceneFreeLook } from './scene-free-look.js?v=20261103-camera-lens-v1';
 import { createFreeLookControls } from './scene-free-look-controls.js?v=20261102-beat-camera-pose-v1';
-import { collectSceneTextures, downscaleTextureSources } from './portrait-texture-budget.js?v=20261108-texture-budget-v1';
-import { estimateRendererResources } from './gpu-resource-estimator.js?v=20261112-single-renderer-v1';
+import { collectSceneTextures, downscaleTextureSources } from './portrait-texture-budget.js?v=20261115-game-bloom-v2';
+import { estimateRendererResources } from './gpu-resource-estimator.js?v=20261115-game-bloom-v2';
 
 function warmScene(renderer, scene, camera) {
     const textures = new Set();

@@ -1,4 +1,4 @@
-import { BeatPlayerApp } from './beat-player.js?v=20261114-sun-shadow-v1';
+import { BeatPlayerApp } from './beat-player.js?v=20261115-lamp-taa-v3';
 import { loadResourceLibrary } from './asset-runtime.js?v=20261114-manifest-fix-v1';
 import { resourceCatalog } from './dialogue-asset-plan.js?v=20261112-custom-background-v2';
 import { motionAvailability } from './library-client.js?v=20261017-browser-cache-v1';

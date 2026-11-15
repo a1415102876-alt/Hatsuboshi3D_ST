@@ -122,7 +122,7 @@ test('indoor, sunset and night scene switches replace the entire volume grade an
         assert.equal(uniforms.gkSaturation.value, 1 + profile.saturation / 100);
         assert.deepEqual(uniforms.gkColorFilter.value.toArray(), settings.grading.colorFilter);
         assert.equal(uniforms.gkToneEnabled.value, profile.bloom ? 1 : 0);
-        assert.equal(uniforms.gkBloomIntensity.value, profile.bloom * 0.35);
+        assert.equal(uniforms.gkBloomIntensity.value, 2 ** (profile.bloom / 10) - 1);
         assert.equal(uniforms.gkStarWeight.value, 0);
         assert.equal(post.resetHistory, true);
     }
@@ -184,11 +184,12 @@ test('inactive star streak stays off even when bloom is enabled', () => {
 test('small bloom buffers are estimated and disposed, including after a resize', () => {
     const post = new GakumasPostPass(renderer(), { renderScale: 1 });
     post.setSize(1280, 720); post.setSize(640, 360);
-    const memory = estimateRendererResources({ renderer: {}, postPass: { bloomPyramid: post.bloomPyramid }, three: THREE });
-    const expected = post.bloomPyramid.reduce((bytes, target) => bytes + target.width * target.height * 8, 0);
+    const levels = [...post.bloomDown, ...post.bloomUp];
+    const memory = estimateRendererResources({ renderer: {}, postPass: { bloomDown: post.bloomDown, bloomUp: post.bloomUp }, three: THREE });
+    const expected = levels.reduce((bytes, target) => bytes + target.width * target.height * 8, 0);
     assert.equal(memory.renderTargetBytes, expected);
     let disposed = 0;
-    for (const target of post.bloomPyramid) target.addEventListener('dispose', () => { disposed += 1; });
+    for (const target of levels) target.addEventListener('dispose', () => { disposed += 1; });
     post.dispose();
-    assert.equal(disposed, post.bloomPyramid.length);
+    assert.equal(disposed, levels.length);
 });

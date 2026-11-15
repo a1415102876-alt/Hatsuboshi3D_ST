@@ -75,10 +75,13 @@ void main() {
 }
 `;
 
+// z marks character (non-scene) coverage so TAA can weight the room like
+// the game's scene TAA and characters like portraits.
 const VELOCITY_FRAGMENT = `
+uniform float gkVelocityActor;
 varying vec2 vVelocity;
 void main() {
-    gl_FragColor = vec4(vVelocity, 0.0, 1.0);
+    gl_FragColor = vec4(vVelocity, gkVelocityActor, 1.0);
 }
 `;
 
@@ -110,6 +113,7 @@ export function createVelocityMaterial() {
         gkPrevViewProj: { value: new THREE.Matrix4() },
         gkPrevModelMatrix: { value: new THREE.Matrix4() },
         gkHasPrevBones: { value: 0 },
+        gkVelocityActor: { value: 1 },
         prevBoneTexture: { value: fallback },
         prevBoneTextureSize: { value: 1 },
     };
@@ -192,6 +196,8 @@ export function renderSceneVelocity(renderer, root, pass, target, camera, { curr
             const entry = memory.get(obj);
             uniforms.gkPrevModelMatrix.value.copy(entry?.matrix || obj.matrixWorld);
             uniforms.gkHasPrevBones.value = entry?.texture ? 1 : 0;
+            const material = Array.isArray(obj.material) ? obj.material[0] : obj.material;
+            uniforms.gkVelocityActor.value = material?.userData?.gakumasSceneSurface ? 0 : 1;
             uniforms.prevBoneTexture.value = entry?.texture || pass.fallbackTexture;
             uniforms.prevBoneTextureSize.value = entry?.size || 1;
             pass.material.uniformsNeedUpdate = true;

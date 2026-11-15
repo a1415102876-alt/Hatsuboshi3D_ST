@@ -16,9 +16,42 @@ export function validateSceneSidecar(sidecar) {
     return errors;
 }
 
+// Unity's GammaToLinearSpace: the sRGB curve below 1 and pow(x, 2.2) from 1
+// up, which is how HDR material and volume colours reach the shaders (a
+// captured star threshold of 1.2 arrives as 1.4935 = 1.2^2.2).
 export function srgbToLinear(value) {
     const c = Number(value) || 0;
-    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    if (c <= 0.04045) return c / 12.92;
+    return c < 1 ? ((c + 0.055) / 1.055) ** 2.4 : c ** 2.2;
+}
+
+// VLBloom iteration count and upsample radius, as Post Processing v2 derives
+// them from the half-resolution size; matches a captured frame (6 levels and
+// sample scale 1.4069 for diffusion 6 at 1081x1920).
+export function bloomLevels(width, height, diffusion) {
+    const size = Math.max(Math.floor(width / 2), Math.floor(height / 2), 1);
+    const logs = Math.log2(size) + Math.min(Math.max(Number(diffusion) || 0, 0), 10) - 10;
+    const whole = Math.floor(logs);
+    return {
+        iterations: Math.max(1, Math.min(16, whole)),
+        sampleScale: 0.5 + logs - whole,
+    };
+}
+
+// VLBloom intensity as uploaded by the game: 2^(intensity / 10) - 1.
+export function bloomStrength(intensity) {
+    return 2 ** ((Number(intensity) || 0) / 10) - 1;
+}
+
+// HDR material colours are saved by Unity's HDR picker as an sRGB base colour
+// times 2^intensity (the vocal room's lamp is exactly 1 x 2^3). Linearise the
+// base and keep the intensity as a linear multiplier; per-channel pow 2.2 on
+// the saved value turned a 73 into 12700 and the lamps into glowing balls.
+export function hdrLinearColor(color = [0, 0, 0]) {
+    const rgb = [color[0] ?? color.r, color[1] ?? color.g, color[2] ?? color.b].map(v => Math.max(0, Number(v) || 0));
+    const scale = Math.max(...rgb);
+    if (scale <= 1) return linearColor(rgb);
+    return linearColor(rgb.map(v => v / scale)).map(v => v * scale);
 }
 
 export function linearColor(color = [1, 1, 1]) {

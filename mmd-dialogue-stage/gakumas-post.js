@@ -1,16 +1,20 @@
 import * as THREE from './vendor/three/build/three.module.js';
-import { haltonSequence } from './gakumas-scene-core.js?v=20261114-sun-shadow-v1';
+import { bloomLevels, bloomStrength, haltonSequence, srgbToLinear } from './gakumas-scene-core.js?v=20261115-lamp-taa-v3';
 import { clampTaaMotion, mergeTaaMotion, decayTaaMotion } from './gakumas-taa-motion.js?v=20261027-motion-aware-taa-v1';
-import { createVelocityMaterial, rememberSceneMotion, renderSceneVelocity } from './gakumas-taa-velocity.js?v=20261027-velocity-reprojection-v1';
-import { GRADE_GLSL } from './gakumas-color-grade.js?v=20261112-single-renderer-v1';
+import { createVelocityMaterial, rememberSceneMotion, renderSceneVelocity } from './gakumas-taa-velocity.js?v=20261115-lamp-taa-v3';
+import { GRADE_GLSL, applyGradeUniforms, gradeUniforms } from './gakumas-color-grade.js?v=20261115-glow-grade-v1';
 
 // 3D scenes defer their own resolved volume grade until this HDR composite.
 // Direct rendering and unsupported HDR targets retain material grading.
-// Bloom strengths are visual calibration, not recovered Unity shader constants.
-const BLOOM_HDR_SCALE = 0.35;
-const BLOOM_DISPLAY_SCALE = 0.15;
-const DIFFUSION_DISPLAY_SCALE = 0.35;
-const PARAFFIN_DISPLAY_SCALE = 0.2;
+// Bloom, star streak scale and flares follow the passes captured from the game.
+const BLOOM_MAX_LEVELS = 8;
+// Current-frame weight of scene TAA (the game captures 0.05; 0.1 keeps
+// ghosting low when the camera moves without motion vectors).
+const SCENE_TAA_INFLUENCE = 0.1;
+const STILL_SCENE_TAA_INFLUENCE = 0.05;
+// VLDiffusion's soft image is 3/16 of the frame (405x720 for 2162x3840 in a
+// captured game frame).
+const DIFFUSION_SCALE = 0.1875;
 
 const POST_VERTEX = `
 varying vec2 vUv;
@@ -20,21 +24,22 @@ void main() {
 }
 `;
 
+// VLBloom prefilter, as captured: a 4-tap box at +-1 source texel, clamped to
+// half-float range, then a hard threshold on the brightest channel.
 const EXTRACT_FRAGMENT = `
 uniform sampler2D gkSource;
+uniform vec2 gkTexel;
 uniform float gkThreshold;
-uniform vec3 gkBloomColor;
 varying vec2 vUv;
 void main() {
-    vec3 color = max(texture2D(gkSource, vUv).rgb, vec3(0.0));
+    vec3 color = texture2D(gkSource, vUv - gkTexel).rgb;
+    color += texture2D(gkSource, vUv + vec2(-gkTexel.x, gkTexel.y)).rgb;
+    color += texture2D(gkSource, vUv + vec2(gkTexel.x, -gkTexel.y)).rgb;
+    color += texture2D(gkSource, vUv + gkTexel).rgb;
+    color = min(max(color * 0.25, vec3(0.0)), vec3(65504.0));
     float brightness = max(max(color.r, color.g), color.b);
-    // Extract excess energy with a soft knee. A binary luma gate made bright
-    // edges pop and discarded saturated highlights before their channels mixed.
-    float knee = max(gkThreshold * 0.5, 1e-4);
-    float soft = clamp(brightness - gkThreshold + knee, 0.0, 2.0 * knee);
-    soft = soft * soft / (4.0 * knee + 1e-4);
-    float weight = max(brightness - gkThreshold, soft) / max(brightness, 1e-4);
-    gl_FragColor = vec4(color * weight * gkBloomColor, 1.0);
+    color *= max(brightness - gkThreshold, 0.0) / max(brightness, 1e-4);
+    gl_FragColor = vec4(color, 1.0);
 }
 `;
 
@@ -54,19 +59,52 @@ void main() {
 }
 `;
 
+// VLDiffusion soft image, as captured from the game: a 4-tap box downsample
+// to 3/16 resolution, then a separable 9-tap triangle blur whose taps are
+// clamped to 1 and spaced by texel * diffusion.
+const DIFFUSION_PREFILTER_FRAGMENT = `
+uniform sampler2D gkSource;
+uniform vec2 gkOffset;
+varying vec2 vUv;
+void main() {
+    vec3 c = texture2D(gkSource, vUv - gkOffset).rgb;
+    c += texture2D(gkSource, vUv + vec2(-gkOffset.x, gkOffset.y)).rgb;
+    c += texture2D(gkSource, vUv + vec2(gkOffset.x, -gkOffset.y)).rgb;
+    c += texture2D(gkSource, vUv + gkOffset).rgb;
+    gl_FragColor = vec4(min(c * 0.25, vec3(65504.0)), 1.0);
+}
+`;
+
+const DIFFUSION_BLUR_FRAGMENT = `
+uniform sampler2D gkSource;
+uniform vec2 gkStep;
+varying vec2 vUv;
+void main() {
+    vec3 sum = vec3(0.0);
+    for (int i = -4; i <= 4; i++) {
+        float w = i == 0 ? 1.0 : (abs(i) == 1 ? 0.9 : (abs(i) == 2 ? 0.75 : (abs(i) == 3 ? 0.5 : 0.25)));
+        sum += min(texture2D(gkSource, vUv + gkStep * float(i)).rgb, vec3(1.0)) * w;
+    }
+    gl_FragColor = vec4(sum / 5.8, 1.0);
+}
+`;
+
+// VLBloom downsample: 4-tap box at +-1 source texel.
 const DOWNSAMPLE_FRAGMENT = `
 uniform sampler2D gkSource;
 uniform vec2 gkTexel;
 varying vec2 vUv;
 void main() {
-    vec3 color = texture2D(gkSource, vUv + gkTexel * vec2(-0.5, -0.5)).rgb;
-    color += texture2D(gkSource, vUv + gkTexel * vec2(0.5, -0.5)).rgb;
-    color += texture2D(gkSource, vUv + gkTexel * vec2(-0.5, 0.5)).rgb;
-    color += texture2D(gkSource, vUv + gkTexel * vec2(0.5, 0.5)).rgb;
+    vec3 color = texture2D(gkSource, vUv - gkTexel).rgb;
+    color += texture2D(gkSource, vUv + vec2(-gkTexel.x, gkTexel.y)).rgb;
+    color += texture2D(gkSource, vUv + vec2(gkTexel.x, -gkTexel.y)).rgb;
+    color += texture2D(gkSource, vUv + gkTexel).rgb;
     gl_FragColor = vec4(color * 0.25, 1.0);
 }
 `;
 
+// VLBloom upsample: a 4-tap box of the lower level at +-sampleScale/2 of its
+// texel, added (not blended) to this level's downsample.
 const UPSAMPLE_FRAGMENT = `
 uniform sampler2D gkSource;
 uniform sampler2D gkLow;
@@ -74,16 +112,12 @@ uniform vec2 gkTexel;
 uniform float gkScatter;
 varying vec2 vUv;
 void main() {
-    vec3 low = texture2D(gkLow, vUv).rgb * 4.0;
-    low += texture2D(gkLow, vUv + vec2(gkTexel.x, 0.0)).rgb * 2.0;
-    low += texture2D(gkLow, vUv - vec2(gkTexel.x, 0.0)).rgb * 2.0;
-    low += texture2D(gkLow, vUv + vec2(0.0, gkTexel.y)).rgb * 2.0;
-    low += texture2D(gkLow, vUv - vec2(0.0, gkTexel.y)).rgb * 2.0;
-    low += texture2D(gkLow, vUv + gkTexel).rgb;
-    low += texture2D(gkLow, vUv - gkTexel).rgb;
-    low += texture2D(gkLow, vUv + gkTexel * vec2(1.0, -1.0)).rgb;
-    low += texture2D(gkLow, vUv + gkTexel * vec2(-1.0, 1.0)).rgb;
-    gl_FragColor = vec4(mix(texture2D(gkSource, vUv).rgb, low / 16.0, gkScatter), 1.0);
+    vec2 d = gkTexel * (gkScatter * 0.5);
+    vec3 low = texture2D(gkLow, vUv - d).rgb;
+    low += texture2D(gkLow, vUv + vec2(-d.x, d.y)).rgb;
+    low += texture2D(gkLow, vUv + vec2(d.x, -d.y)).rgb;
+    low += texture2D(gkLow, vUv + d).rgb;
+    gl_FragColor = vec4(low * 0.25 + texture2D(gkSource, vUv).rgb, 1.0);
 }
 `;
 
@@ -135,6 +169,7 @@ uniform float gkVarianceScale;
 uniform float gkHasHistory;
 uniform float gkKeepAlpha;
 uniform float gkStill;
+uniform float gkCameraStill;
 uniform float gkMotion;
 uniform float gkObjectMotion;
 uniform float gkHasVelocity;
@@ -163,10 +198,6 @@ vec3 gkYCoCgToRgb(vec3 color) {
 }
 
 const vec3 GK_REC709 = vec3(0.212673, 0.715152, 0.072175);
-
-float gkLumaCompress(float value) {
-    return max(value, 0.0) / (1.0 + max(value, 0.0));
-}
 
 vec4 gkVelocityAt(vec2 uv) {
     return texture2D(gkVelocity, clamp(uv, 0.0, 1.0));
@@ -261,20 +292,40 @@ void main() {
     vec3 history = clamp(rawHistory, gkBoxMin, gkBoxMax);
     // Portrait characters have no motion vectors. A 90% history smear blurs the
     // face, and snapping only the coverage makes the silhouette crawl.
-    float clipDistance = length(rawHistory - history);
-    float rejectSpan = gkKeepAlpha > 0.5 ? smoothstep(0.02, 0.10, clipDistance) : smoothstep(0.04, 0.18, clipDistance);
+    // Measured relative to the local brightness above 1, so a tiny HDR lamp
+    // keeps its history instead of being rejected every frame (which made
+    // it flicker under jitter); LDR pixels keep the absolute thresholds.
+    float clipDistance = length(rawHistory - history) / (1.0 + max(mean.x - 1.0, 0.0));
+    // Room pixels in a shared character layer resolve like the scene pass
+    // (the game's scene TAA keeps 95% history). Weighting them like a
+    // portrait let every jitter step show and made lamps flicker.
+    vec4 centerVelocity = gkVelocityAt(vUv);
+    // Without a velocity buffer nothing is marked, and every pixel keeps the
+    // previous behaviour.
+    float sceneSurface = gkHasVelocity * step(0.5, centerVelocity.a) * (1.0 - step(0.5, centerVelocity.z));
+    float portrait = gkKeepAlpha > 0.5 ? 1.0 - sceneSurface : 0.0;
+    float rejectSpan = mix(smoothstep(0.04, 0.18, clipDistance), smoothstep(0.02, 0.10, clipDistance), portrait);
     // Keep the scalar hint as a conservative fallback for passes that have no
     // velocity coverage, while the per-pixel vector handles skinned motion.
     float velocityReject = hasVelocity * smoothstep(0.015, 0.12, length(velocitySample.xy));
-    float reject = max(max(max(gkMotion, gkObjectMotion * 0.85), velocityReject * 0.45), rejectSpan);
-    float influence = mix(1.0, mix(gkInfluence, 1.0, reject), inside * gkHasHistory);
+    // A still room keeps its history like the game's TAA (clip, no span
+    // rejection): a lamp narrower than a pixel otherwise blinks with jitter.
+    // Room pixels only depend on the camera: character motion must not
+    // reject their history.
+    float objectReject = gkObjectMotion * 0.85 * (1.0 - sceneSurface);
+    float reject = max(max(max(gkMotion, objectReject), velocityReject * 0.45), rejectSpan * (1.0 - sceneSurface * gkCameraStill));
+    float sceneInfluence = mix(${SCENE_TAA_INFLUENCE}, ${STILL_SCENE_TAA_INFLUENCE}, gkCameraStill);
+    float baseInfluence = mix(gkInfluence, sceneInfluence, sceneSurface);
+    float influence = mix(1.0, mix(baseInfluence, 1.0, reject), inside * gkHasHistory);
     vec3 historyRgb = max(gkYCoCgToRgb(history), vec3(0.0));
     vec3 centerRgb = max(gkYCoCgToRgb(center), vec3(0.0));
-    float currentLuma = gkLumaCompress(dot(centerRgb, GK_REC709));
-    float historyLuma = gkLumaCompress(dot(historyRgb, GK_REC709));
-    float lumaRatio = currentLuma / max(historyLuma, 1e-4);
-    vec3 lumaAdjustedHistory = historyRgb * clamp(lumaRatio, 0.5, 2.0);
-    vec3 resolved = mix(lumaAdjustedHistory, centerRgb, influence);
+    // The game's resolve blends in a reversible tonemapped space:
+    // c / (1 + luma) in, c / (1 - luma) out. Bright subpixel highlights then
+    // average like LDR pixels instead of dominating every frame they touch.
+    vec3 historyWeighted = historyRgb / (1.0 + dot(historyRgb, GK_REC709));
+    vec3 centerWeighted = centerRgb / (1.0 + dot(centerRgb, GK_REC709));
+    vec3 blended = mix(historyWeighted, centerWeighted, influence);
+    vec3 resolved = blended / max(1.0 - dot(blended, GK_REC709), 1e-4);
     float currentAlpha = texture2D(gkCurrent, sampleUv).a;
     float historyAlpha = texture2D(gkHistory, clamp(historyUv, 0.0, 1.0)).a;
     float alpha = gkKeepAlpha > 0.5 ? mix(historyAlpha, currentAlpha, influence) : 1.0;
@@ -407,9 +458,11 @@ uniform sampler2D gkSource;
 uniform sampler2D gkBloomMap;
 uniform sampler2D gkSoftMap;
 uniform float gkBloomIntensity;
+uniform vec3 gkBloomColor;
 uniform float gkDiffusionBlend;
 uniform float gkDiffusionThreshold;
 uniform float gkDiffusionPower;
+uniform float gkDiffusionEnabled;
 uniform float gkChroma;
 uniform vec4 gkFlare0;
 uniform vec4 gkFlare1;
@@ -418,37 +471,49 @@ uniform vec3 gkFlare0B;
 uniform vec3 gkFlare1A;
 uniform vec3 gkFlare1B;
 uniform float gkFlareWeight;
-uniform float gkFlareScale;
 uniform vec3 gkVignetteColor;
 uniform vec4 gkVignette;
 uniform float gkVignetteWeight;
 uniform float gkStarWeight;
 varying vec2 vUv;
 
+// VLParaffin, as captured: a linear radial ramp from color0 at
+// 0.5 + center to color1 at the edge of the size ellipse, faded by
+// (1 - r) and added to the bloom.
 vec3 gkFlare(vec2 uv, vec4 flare, vec3 inner, vec3 outer) {
     vec2 size = max(flare.zw, vec2(1e-3));
-    float radius = length((uv - flare.xy) / size);
-    float weight = exp(-radius * radius * 2.0);
-    return mix(outer, inner, weight) * weight;
+    float r = min(length((uv - 0.5 - flare.xy) / size), 1.0);
+    return mix(inner, outer, r) * (1.0 - r);
 }
 
 void main() {
-    // URP-style radial aberration: intensity is scaled by distance squared,
-    // keeping the subject clean while leaving a restrained fringe at the edge.
-    vec2 radial = vUv - 0.5;
-    vec2 shift = radial * dot(radial, radial) * gkChroma;
+    // URP chromatic aberration (fast path), as in the game's uber pass:
+    // red at the pixel, green and blue a third and two thirds along
+    // c * |c|^2 * intensity, with c the centred [-1, 1] coordinate.
+    vec2 centred = vUv * 2.0 - 1.0;
+    vec2 aberration = centred * dot(centred, centred) * gkChroma;
     vec4 source = texture2D(gkSource, vUv);
     vec3 color = vec3(
-        texture2D(gkSource, clamp(vUv + shift, 0.0, 1.0)).r,
-        source.g,
-        texture2D(gkSource, clamp(vUv - shift, 0.0, 1.0)).b
+        source.r,
+        texture2D(gkSource, clamp(vUv - aberration / 3.0, 0.0, 1.0)).g,
+        texture2D(gkSource, clamp(vUv - aberration * 2.0 / 3.0, 0.0, 1.0)).b
     );
-    vec3 soft = texture2D(gkSoftMap, vUv).rgb;
-    float contrast = abs(dot(color - soft, vec3(0.2126, 0.7152, 0.0722)));
-    float response = pow(clamp(contrast / max(gkDiffusionThreshold, 1e-4), 0.0, 1.0), max(gkDiffusionPower, 1e-3));
-    color = mix(color, soft, gkDiffusionBlend * (1.0 - response));
+    if (gkDiffusionEnabled > 0.5) {
+        // VLDiffusion, recovered from a captured game frame: the brighter of
+        // the pixel and the soft image, through an S-curve that passes
+        // (threshold, threshold), mixed by contrastPower, then blended in and
+        // renormalised by 1 + blend.
+        vec3 soft = texture2D(gkSoftMap, vUv).rgb;
+        vec3 m = min(max(color, soft), vec3(1.0));
+        float t = clamp(gkDiffusionThreshold, 1e-3, 1.0 - 1e-3);
+        vec3 lowCurve = m * m / t;
+        vec3 highCurve = 1.0 - (1.0 - m) * (1.0 - m) / (1.0 - t);
+        vec3 curve = mix(lowCurve, highCurve, step(vec3(t), m));
+        vec3 diffused = m + gkDiffusionPower * (curve - m);
+        color = (color + diffused * gkDiffusionBlend) / (1.0 + gkDiffusionBlend);
+    }
     vec3 bloom = texture2D(gkBloomMap, vUv).rgb;
-    color += bloom * gkBloomIntensity;
+    color += bloom * gkBloomIntensity * gkBloomColor;
     if (gkStarWeight > 0.0) {
         vec2 streak = vec2(0.02, 0.004);
         vec2 cross = vec2(-streak.y, streak.x);
@@ -461,12 +526,15 @@ void main() {
         color += star * gkStarWeight * gkBloomIntensity;
     }
     if (gkFlareWeight > 0.0) {
-        color += gkFlareScale * gkFlare(vUv, gkFlare0, gkFlare0A, gkFlare0B);
-        color += gkFlareScale * gkFlare(vUv, gkFlare1, gkFlare1A, gkFlare1B);
+        color += gkFlare(vUv, gkFlare0, gkFlare0A, gkFlare0B);
+        color += gkFlare(vUv, gkFlare1, gkFlare1A, gkFlare1B);
     }
-    vec2 delta = abs(vUv - gkVignette.xy) * gkVignette.z;
-    float vignette = pow(clamp(1.0 - length(delta), 0.0, 1.0), max(gkVignette.w, 1e-3));
-    color = mix(color, mix(gkVignetteColor, color, vignette), gkVignetteWeight);
+    if (gkVignetteWeight > 0.0) {
+        // URP vignette: params are (intensity * 3, smoothness * 5).
+        vec2 delta = abs(vUv - gkVignette.xy) * gkVignette.z;
+        float vignette = pow(clamp(1.0 - dot(delta, delta), 0.0, 1.0), max(gkVignette.w, 1e-3));
+        color *= mix(gkVignetteColor, vec3(1.0), vignette);
+    }
     // Preserve portrait/plate coverage when handing this texture to LookPass.
     // Grade straight colour, then return to premultiplied canvas coverage.
     float alpha = gkKeepAlpha > 0.5 ? source.a : 1.0;
@@ -660,11 +728,14 @@ export class GakumasPostPass {
         // scene color, so they follow it. spaceA/B hold ambient occlusion only.
         this.bloomA = take('bloomA', () => makeTarget(1, 1, { type: colorType }));
         this.bloomB = take('bloomB', () => makeTarget(1, 1, { type: colorType }));
-        // Small mip levels replace the old wide, sparsely sampled blur. The
-        // existing half-size pair is reused for the largest level.
-        this.bloomPyramid = take('bloomPyramid', () => Array.from({ length: 7 }, () => makeTarget(1, 1, { type: colorType })));
+        // Bloom levels below half size: downsamples and the summed upsamples.
+        // bloomA/bloomB hold the half-size prefilter and final result.
+        this.bloomDown = take('bloomDown', () => Array.from({ length: BLOOM_MAX_LEVELS - 1 }, () => makeTarget(1, 1, { type: colorType })));
+        this.bloomUp = take('bloomUp', () => Array.from({ length: BLOOM_MAX_LEVELS - 1 }, () => makeTarget(1, 1, { type: colorType })));
         this.softA = take('softA', () => makeTarget(1, 1, { type: colorType }));
         this.softB = take('softB', () => makeTarget(1, 1, { type: colorType }));
+        this.diffusionA = take('diffusionA', () => makeTarget(1, 1, { type: colorType }));
+        this.diffusionB = take('diffusionB', () => makeTarget(1, 1, { type: colorType }));
         this.dofTarget = take('dofTarget', () => makeTarget(1, 1, { type: colorType }));
         this.spaceA = take('spaceA', () => makeTarget(1, 1));
         this.spaceB = take('spaceB', () => makeTarget(1, 1));
@@ -684,12 +755,20 @@ export class GakumasPostPass {
         });
         this.extractMaterial = shader(EXTRACT_FRAGMENT, {
             gkSource: { value: this.color.texture },
+            gkTexel: { value: new THREE.Vector2() },
             gkThreshold: { value: 1 },
-            gkBloomColor: { value: new THREE.Color(1, 1, 1) },
         });
         this.blurMaterial = shader(BLUR_FRAGMENT, {
             gkSource: { value: null },
             gkBlurTexel: { value: new THREE.Vector2() },
+        });
+        this.diffusionPrefilterMaterial = shader(DIFFUSION_PREFILTER_FRAGMENT, {
+            gkSource: { value: null },
+            gkOffset: { value: new THREE.Vector2() },
+        });
+        this.diffusionBlurMaterial = shader(DIFFUSION_BLUR_FRAGMENT, {
+            gkSource: { value: null },
+            gkStep: { value: new THREE.Vector2() },
         });
         this.downsampleMaterial = shader(DOWNSAMPLE_FRAGMENT, {
             gkSource: { value: null },
@@ -699,7 +778,7 @@ export class GakumasPostPass {
             gkSource: { value: null },
             gkLow: { value: null },
             gkTexel: { value: new THREE.Vector2() },
-            gkScatter: { value: 0.65 },
+            gkScatter: { value: 1 },
         });
         this.fxaaMaterial = shader(FXAA_FRAGMENT, {
             gkSource: { value: this.color.texture },
@@ -726,6 +805,7 @@ export class GakumasPostPass {
             gkHasHistory: { value: 0 },
             gkKeepAlpha: { value: keepAlpha ? 1 : 0 },
             gkStill: { value: 0 },
+            gkCameraStill: { value: 0 },
             gkMotion: { value: 0 },
             gkObjectMotion: { value: 0 },
             gkHasVelocity: { value: 0 },
@@ -739,21 +819,14 @@ export class GakumasPostPass {
             gkApplyGrade: { value: 0 },
             gkDeferGrade: { value: 0 },
             gkKeepAlpha: { value: keepAlpha ? 1 : 0 },
-            gkExposure: { value: 1 },
-            gkContrast: { value: 1 },
-            gkSaturation: { value: 1 },
-            gkColorFilter: { value: new THREE.Vector3(1, 1, 1) },
-            gkTone: { value: new THREE.Vector4(0.22, 0.4, 1, 1.33) },
-            gkToneEnabled: { value: 0 },
-            gkShadows: { value: new THREE.Vector3(1, 1, 1) },
-            gkMidtones: { value: new THREE.Vector3(1, 1, 1) },
-            gkHighlights: { value: new THREE.Vector3(1, 1, 1) },
-            gkSmhLimits: { value: new THREE.Vector4(0, 0.3, 0.55, 1) },
+            ...gradeUniforms(),
             gkSource: { value: this.color.texture },
             gkBloomMap: { value: this.bloomA.texture },
             gkSoftMap: { value: this.softA.texture },
             gkBloomIntensity: { value: 0 },
+            gkBloomColor: { value: new THREE.Color(1, 1, 1) },
             gkDiffusionBlend: { value: 0 },
+            gkDiffusionEnabled: { value: 0 },
             gkDiffusionThreshold: { value: 0.5 },
             gkDiffusionPower: { value: 1 },
             gkChroma: { value: 0 },
@@ -764,7 +837,6 @@ export class GakumasPostPass {
             gkFlare1A: { value: new THREE.Color() },
             gkFlare1B: { value: new THREE.Color() },
             gkFlareWeight: { value: 0 },
-            gkFlareScale: { value: PARAFFIN_DISPLAY_SCALE },
             gkVignetteColor: { value: new THREE.Color() },
             gkVignette: { value: new THREE.Vector4(0.5, 0.5, 0, 0.2) },
             gkVignetteWeight: { value: 0 },
@@ -875,39 +947,31 @@ export class GakumasPostPass {
         const flares = settings.paraffin?.flares || [{}, {}];
         const uniforms = this.compositeMaterial.uniforms;
         const extract = this.extractMaterial.uniforms;
-        extract.gkThreshold.value = Number.isFinite(bloom.threshold) ? bloom.threshold : 1;
-        extract.gkBloomColor.value.setRGB(...(bloom.color || [1, 1, 1]));
-        uniforms.gkBloomIntensity.value = this.modules.bloom ? (bloom.intensity || 0) * (this.usesSceneHDR ? BLOOM_HDR_SCALE : BLOOM_DISPLAY_SCALE) : 0;
+        // The game uploads the threshold converted to linear and the
+        // intensity as 2^(intensity / 10) - 1, tinted by the bloom colour.
+        extract.gkThreshold.value = srgbToLinear(Number.isFinite(bloom.threshold) ? bloom.threshold : 1);
+        uniforms.gkBloomColor.value.setRGB(...(bloom.color || [1, 1, 1]));
+        uniforms.gkBloomIntensity.value = this.modules.bloom ? bloomStrength(bloom.intensity) : 0;
         uniforms.gkStarWeight.value = this.modules.bloom && settings.starStreak?.enabled ? 0.09 : 0;
-        uniforms.gkDiffusionBlend.value = this.modules.diffusion ? (diffusion.blend || 0) * DIFFUSION_DISPLAY_SCALE : 0;
+        uniforms.gkDiffusionBlend.value = this.modules.diffusion ? Math.max(diffusion.blend || 0, 0) : 0;
         uniforms.gkDiffusionThreshold.value = diffusion.contrastThreshold ?? 0.5;
-        uniforms.gkDiffusionPower.value = Math.max(diffusion.contrastPower || 1, 1e-3);
+        uniforms.gkDiffusionPower.value = Number.isFinite(diffusion.contrastPower) ? diffusion.contrastPower : 1;
         // Volume intensity is the URP spectral amount. Used raw it splits the
         // frame by tens of pixels, so keep only the edge fringe.
         uniforms.gkChroma.value = this.modules.chromatic ? (settings.chromatic?.intensity || 0) * 0.05 : 0;
         const grade = settings.grading;
         uniforms.gkApplyGrade.value = this.usesSceneHDR ? 1 : 0;
-        if (grade) {
-            uniforms.gkExposure.value = grade.exposure;
-            uniforms.gkContrast.value = grade.contrast;
-            uniforms.gkSaturation.value = grade.saturation;
-            uniforms.gkColorFilter.value.fromArray(grade.colorFilter);
-            uniforms.gkTone.value.set(grade.tone.linearStart, grade.tone.linearLength, grade.tone.contrast, grade.tone.black);
-            uniforms.gkToneEnabled.value = grade.tone.enabled ? 1 : 0;
-            uniforms.gkShadows.value.fromArray(grade.shadows);
-            uniforms.gkMidtones.value.fromArray(grade.midtones);
-            uniforms.gkHighlights.value.fromArray(grade.highlights);
-            uniforms.gkSmhLimits.value.fromArray(grade.smhLimits);
-        }
+        if (grade) applyGradeUniforms(uniforms, grade);
         this.writeFlare(0, flares[0]);
         this.writeFlare(1, flares[1]);
         uniforms.gkFlareWeight.value = this.modules.paraffin ? 1 : 0;
         const vignette = settings.vignette || {};
         uniforms.gkVignetteColor.value.setRGB(...(vignette.color || [0, 0, 0]));
-        uniforms.gkVignette.value.set(vignette.center?.[0] ?? 0.5, vignette.center?.[1] ?? 0.5, vignette.intensity || 0, Math.max(vignette.smoothness || 0.2, 1e-3));
+        uniforms.gkVignette.value.set(vignette.center?.[0] ?? 0.5, vignette.center?.[1] ?? 0.5, (vignette.intensity || 0) * 3, Math.max((vignette.smoothness ?? 0.2) * 5, 1e-3));
         uniforms.gkVignetteWeight.value = this.modules.vignette ? 1 : 0;
-        this.bloomRadius = this.modules.bloom ? (bloom.diffusion || 0) * 2 : 0;
-        this.softRadius = this.modules.diffusion ? Math.max(0, diffusion.diffusion || 0) * 6 : 0;
+        this.bloomDiffusion = this.modules.bloom ? Number(bloom.diffusion) || 0 : 0;
+        this.diffusionAmount = this.modules.diffusion ? Math.max(0, diffusion.diffusion || 0) : 0;
+        uniforms.gkDiffusionEnabled.value = this.diffusionAmount > 0 && uniforms.gkDiffusionBlend.value > 0 ? 1 : 0;
     }
 
     writeFlare(index, flare = {}) {
@@ -941,10 +1005,18 @@ export class GakumasPostPass {
         const hw = Math.max(1, Math.floor(w / 2));
         const hh = Math.max(1, Math.floor(h / 2));
         for (const target of [this.bloomA, this.bloomB, this.softA, this.softB, this.spaceA, this.spaceB]) target.setSize(hw, hh);
-        this.bloomPyramid.forEach((target, index) => {
-            const level = index < 4 ? index + 2 : index - 2;
-            target.setSize(Math.max(1, w >> level), Math.max(1, h >> level));
-        });
+        const dw = Math.max(1, Math.round(w * DIFFUSION_SCALE));
+        const dh = Math.max(1, Math.round(h * DIFFUSION_SCALE));
+        this.diffusionA.setSize(dw, dh);
+        this.diffusionB.setSize(dw, dh);
+        let lw = hw;
+        let lh = hh;
+        for (let index = 0; index < this.bloomDown.length; index += 1) {
+            lw = Math.max(1, Math.floor(lw / 2));
+            lh = Math.max(1, Math.floor(lh / 2));
+            this.bloomDown[index].setSize(lw, lh);
+            this.bloomUp[index].setSize(lw, lh);
+        }
         this.dofTarget.setSize(w, h);
         this.spaceFull.setSize(w, h);
         this.resetHistory = true;
@@ -1015,7 +1087,6 @@ export class GakumasPostPass {
         uniforms.gkHasVelocity.value = this.velocityFrame ? 1 : 0;
         uniforms.gkTexel.value.set(1 / this.color.width, 1 / this.color.height);
         const portrait = uniforms.gkKeepAlpha.value > 0.5;
-        uniforms.gkInfluence.value = portrait ? 0.42 : 0.1;
             // GPA captured cb1[12].z = 0.9 for the game's 3x3 variance clip.
             // Keep the same range for transparent portraits; velocity rejection
             // handles their moving silhouettes instead of narrowing the clip.
@@ -1025,7 +1096,10 @@ export class GakumasPostPass {
             + this.lastQuaternion.angleTo(viewCamera.quaternion) * (this.color.height / Math.max(viewCamera.fov, 1));
         const objectMotion = clampTaaMotion(this.motionHint);
         const still = movedPixels < 0.25 && objectMotion < 0.05;
+        const cameraStill = movedPixels < 0.25;
+        uniforms.gkInfluence.value = portrait ? 0.42 : cameraStill ? STILL_SCENE_TAA_INFLUENCE : SCENE_TAA_INFLUENCE;
         uniforms.gkStill.value = still ? 1 : 0;
+        uniforms.gkCameraStill.value = cameraStill ? 1 : 0;
         uniforms.gkMotion.value = Math.min(1, movedPixels / 6);
         uniforms.gkObjectMotion.value = objectMotion;
         this.lastPosition.copy(viewCamera.position);
@@ -1058,11 +1132,32 @@ export class GakumasPostPass {
         return pong;
     }
 
+    renderDiffusion(source) {
+        const a = this.diffusionA, b = this.diffusionB;
+        const pre = this.diffusionPrefilterMaterial.uniforms;
+        pre.gkSource.value = source;
+        pre.gkOffset.value.set(0.5 / a.width, 0.5 / a.height);
+        this.blit(this.diffusionPrefilterMaterial, a);
+        const blur = this.diffusionBlurMaterial.uniforms;
+        blur.gkSource.value = a.texture;
+        blur.gkStep.value.set(this.diffusionAmount / a.width, 0);
+        this.blit(this.diffusionBlurMaterial, b);
+        blur.gkSource.value = b.texture;
+        blur.gkStep.value.set(0, this.diffusionAmount / a.height);
+        this.blit(this.diffusionBlurMaterial, a);
+        return a.texture;
+    }
+
+    // VLBloom as captured from the game: prefilter to half size, box
+    // downsamples, then upsamples that sum every level. Intensity and tint
+    // are applied in the composite.
     renderBloom(source) {
-        this.extractMaterial.uniforms.gkSource.value = source;
+        const extract = this.extractMaterial.uniforms;
+        extract.gkSource.value = source;
+        extract.gkTexel.value.set(1 / this.color.width, 1 / this.color.height);
         this.blit(this.extractMaterial, this.bloomA);
-        const count = Math.max(1, Math.min(5, Math.round(this.bloomRadius / 2) - 1));
-        const levels = [this.bloomA, ...this.bloomPyramid.slice(0, count - 1)];
+        const { iterations, sampleScale } = bloomLevels(this.color.width, this.color.height, this.bloomDiffusion);
+        const levels = [this.bloomA, ...this.bloomDown.slice(0, Math.min(iterations, BLOOM_MAX_LEVELS) - 1)];
         const down = this.downsampleMaterial.uniforms;
         for (let index = 1; index < levels.length; index += 1) {
             const previous = levels[index - 1];
@@ -1072,8 +1167,9 @@ export class GakumasPostPass {
         }
         let low = levels[levels.length - 1];
         const up = this.upsampleMaterial.uniforms;
+        up.gkScatter.value = sampleScale;
         for (let index = levels.length - 2; index >= 0; index -= 1) {
-            const target = index === 0 ? this.bloomB : this.bloomPyramid[3 + index];
+            const target = index === 0 ? this.bloomB : this.bloomUp[index - 1];
             up.gkSource.value = levels[index].texture;
             up.gkLow.value = low.texture;
             up.gkTexel.value.set(1 / low.width, 1 / low.height);
@@ -1117,9 +1213,8 @@ export class GakumasPostPass {
         this.compositeMaterial.uniforms.gkSource.value = source;
         this.compositeMaterial.uniforms.gkApplyGrade.value = this.usesSceneHDR ? 1 : 0;
         if (this.modules.bloom) this.compositeMaterial.uniforms.gkBloomMap.value = this.renderBloom(source);
-        if (this.modules.diffusion && this.softRadius > 0) {
-            const soft = this.blur({ texture: source }, this.softRadius * this.color.height / 1080, this.softA, this.softB);
-            this.compositeMaterial.uniforms.gkSoftMap.value = soft.texture;
+        if (this.compositeMaterial.uniforms.gkDiffusionEnabled.value > 0) {
+            this.compositeMaterial.uniforms.gkSoftMap.value = this.renderDiffusion(source);
         }
         this.blit(this.compositeMaterial, target);
         return target.texture;
@@ -1206,9 +1301,8 @@ export class GakumasPostPass {
             if (this.modules.bloom) {
                 this.compositeMaterial.uniforms.gkBloomMap.value = this.renderBloom(source);
             }
-            if (this.modules.diffusion && this.softRadius > 0) {
-                const soft = this.blur({ texture: source }, this.softRadius * this.color.height / 1080, this.softA, this.softB);
-                this.compositeMaterial.uniforms.gkSoftMap.value = soft.texture;
+            if (this.compositeMaterial.uniforms.gkDiffusionEnabled.value > 0) {
+                this.compositeMaterial.uniforms.gkSoftMap.value = this.renderDiffusion(source);
             }
             if (!present) {
                 // Reuse the idle history buffer: no extra full-size HDR target.
@@ -1258,7 +1352,7 @@ export class GakumasPostPass {
         for (const target of this.history) target.dispose();
         this.layerTarget?.dispose();
         if (!this.sharedTargets) {
-            for (const target of [this.color, this.msaa, this.bloomA, this.bloomB, ...this.bloomPyramid, this.softA, this.softB, this.dofTarget, this.spaceA, this.spaceB, this.spaceFull]) if (target) target.dispose();
+            for (const target of [this.color, this.msaa, this.bloomA, this.bloomB, ...this.bloomDown, ...this.bloomUp, this.softA, this.softB, this.diffusionA, this.diffusionB, this.dofTarget, this.spaceA, this.spaceB, this.spaceFull]) if (target) target.dispose();
             this.velocityTarget?.dispose();
             this.depth.dispose();
         }
@@ -1266,6 +1360,8 @@ export class GakumasPostPass {
         this.copyMaterial.dispose();
         this.extractMaterial.dispose();
         this.blurMaterial.dispose();
+        this.diffusionPrefilterMaterial.dispose();
+        this.diffusionBlurMaterial.dispose();
         this.downsampleMaterial.dispose();
         this.upsampleMaterial.dispose();
         this.dofMaterial.dispose();

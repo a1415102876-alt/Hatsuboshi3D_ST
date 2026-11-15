@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { OutlineEffect } from 'three/addons/effects/OutlineEffect.js?v=20261005-hair-outline-v1';
-import { GakumasLookPass } from './gakumas-look.js?v=20261114-sun-shadow-v1';
-import { GakumasPostPass, disposePostTargets } from './gakumas-post.js?v=20261114-sun-shadow-v1';
-import { collectPostTargets, estimateRendererResources } from './gpu-resource-estimator.js?v=20261112-single-renderer-v1';
+import { GakumasLookPass } from './gakumas-look.js?v=20261115-lamp-taa-v3';
+import { GakumasPostPass, disposePostTargets } from './gakumas-post.js?v=20261115-lamp-taa-v3';
+import { collectPostTargets, estimateRendererResources } from './gpu-resource-estimator.js?v=20261115-game-bloom-v2';
 import { resetRendererCanvasViewport, shouldAccumulateStageLayers } from './stage-renderer-core.js?v=20261112-2d-plate-grade-v2';
 
 // Everything that is bound to one WebGL context: the canvas, the renderer, the

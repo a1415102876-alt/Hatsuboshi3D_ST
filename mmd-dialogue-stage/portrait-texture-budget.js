@@ -86,6 +86,11 @@ export async function downscaleTextureSources(textures, {
                     resizeWidth: Math.max(1, Math.round(group.width * scale)),
                     resizeHeight: Math.max(1, Math.round(group.height * scale)),
                     resizeQuality: 'high',
+                    // Keep the stored bytes: alpha often carries data (RGBM
+                    // sky and lightmap scale, masks), and premultiplying it
+                    // into colour darkened those textures.
+                    premultiplyAlpha: 'none',
+                    colorSpaceConversion: 'none',
                 });
                 if (!bitmap) return false;
                 for (const source of group.sources) source.data = bitmap;
