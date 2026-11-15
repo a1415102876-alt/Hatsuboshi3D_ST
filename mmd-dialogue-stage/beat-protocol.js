@@ -1,10 +1,10 @@
-import { resolveNpcPortrait } from './beat-npc-portraits.js?v=20261102-krnh-3d-v1';
-import { sceneIdolId, SCENE_IDOLS, STAR_EYE_IDOLS } from './scene-protocol.js?v=20261102-krnh-3d-v1';
+import { resolveNpcPortrait } from './beat-npc-portraits.js?v=20261110-hkne-3d-v1';
+import { sceneIdolId, SCENE_IDOLS, STAR_EYE_IDOLS } from './scene-protocol.js?v=20261111-hkne-motions-v1';
 import { BEAT_CUE_IDS, BEAT_BODY_CUE_SPECS, BEAT_EFFECT_ALIASES, BEAT_EFFECT_IDS, BEAT_FACE_ALIASES, BEAT_FACE_IDS, BEAT_OVERLAY_CUE_IDS, isBeatMotionFile, resolveBeatCueAlias } from './beat-cues.js?v=20261103-paired-face-v1';
 import { normalizeFaceCue, normalizeGestureCue } from './dialogue-intent.js?v=20261026-cue-words-v1';
 import { resolveBeatBackgroundAsset } from './beat-background-assets.js?v=20261029-bg-filename-v1';
-import { resolveBeatCostume } from './beat-costumes.js?v=20261013-all-idol-solo1-v1';
-import { BEAT_CAMERA_PRESETS, BEAT_SHOTS, beatActorId } from './beat-player-core.js?v=20261102-krnh-3d-v1';
+import { resolveBeatCostume } from './beat-costumes.js?v=20261113-hkne-onsen-v1';
+import { BEAT_CAMERA_PRESETS, BEAT_SHOTS, beatActorId } from './beat-player-core.js?v=20261110-hkne-3d-v1';
 
 const DEFAULT_CUES = BEAT_CUE_IDS;
 const DEFAULT_SHOTS = BEAT_SHOTS;
@@ -14,6 +14,7 @@ const DEFAULT_POSITIONS = Object.freeze(['left', 'center', 'right']);
 const DEFAULT_FACES = BEAT_FACE_IDS;
 const DEFAULT_OVERLAYS = BEAT_OVERLAY_CUE_IDS;
 const DEFAULT_EFFECTS = BEAT_EFFECT_IDS;
+const CUSTOM_BACKGROUND_NAME = /^custom[1-9]\d*$/iu;
 const BUILTIN_OTHER_SPEAKERS = new Set(['producer', '制作人', 'narrator', '旁白']);
 const CUE_WORD_ALIASES = Object.freeze({
     疑问: 'ask',
@@ -47,6 +48,15 @@ const BEAT_TRANSITIONS = Object.freeze({
     时钟: 'clock',
     时钟圆形: 'clock',
     圆形时钟: 'clock',
+    // Enter this beat with a hard cut: no clock wipe and no scene-change
+    // color bar, even when the background changes here.
+    none: 'none',
+    cut: 'none',
+    无: 'none',
+    无转场: 'none',
+    不转场: 'none',
+    直接切换: 'none',
+    硬切: 'none',
 });
 
 function canonToken(value, words) {
@@ -69,6 +79,10 @@ function resolveFaceWord(value) {
 function asSet(values, fallback) {
     const source = Array.isArray(values) && values.length ? values : fallback;
     return new Set(source.map(value => String(value).trim()).filter(Boolean));
+}
+
+function isCustomBackgroundName(value) {
+    return CUSTOM_BACKGROUND_NAME.test(String(value || '').trim());
 }
 
 function parseAttributes(source) {
@@ -123,7 +137,7 @@ function parseLocalizedBeatText(rawText, speaker) {
 }
 
 function isFishVoicedSpeaker(speaker) {
-    return /(?:kotone|fktn|藤田琴音|琴音|hski|花海咲季|咲季|ttmr|月村手毬|手毬|shro|筱泽广|篠澤広|广|hmsz|秦谷美铃|美铃|kllj|葛城莉莉娅|莉莉娅|jsna|十王星南|星南|hume|花海佑芽|佑芽|hrnm|rinami|姬崎莉波|莉波|ssmk|sumika|shiun\s+sumika|紫云清夏|清夏|amao|mao|arimura\s+mao|有村麻央|麻央|atbm|tsubame|amaya\s+tsubame|雨夜燕|燕|kcna|仓本千奈|千奈|krnh|贺阳燐羽|賀陽燐羽|燐羽|nasr|asari|亚纱里|亜紗里)/i.test(String(speaker || ''));
+    return /(?:kotone|fktn|藤田琴音|琴音|hski|花海咲季|咲季|ttmr|月村手毬|手毬|shro|筱泽广|篠澤広|广|hmsz|秦谷美铃|美铃|kllj|葛城莉莉娅|莉莉娅|jsna|十王星南|星南|hume|花海佑芽|佑芽|hrnm|rinami|姬崎莉波|莉波|ssmk|sumika|shiun\s+sumika|紫云清夏|清夏|amao|mao|arimura\s+mao|有村麻央|麻央|atbm|tsubame|amaya\s+tsubame|雨夜燕|燕|kcna|仓本千奈|千奈|krnh|贺阳燐羽|賀陽燐羽|燐羽|nasr|asari|亚纱里|亜紗里|hkne|kanae|hido[\s-]+kanae|冰渡香名江|氷渡香名江|香名江)/i.test(String(speaker || ''));
 }
 
 function addError(errors, code, message, index, beat = null) {
@@ -184,6 +198,12 @@ export function parseBeatScript(source, options = {}) {
     const overlays = asSet(options.overlays, DEFAULT_OVERLAYS);
     const effects = asSet(options.effects, DEFAULT_EFFECTS);
     const backgrounds = asSet(options.backgrounds, []);
+    const customBackgrounds = new Set([...asSet(options.customBackgrounds, [])].map(value => String(value).trim().toLowerCase()));
+    // The player reads its browser-local Custom image repository asynchronously.
+    // During that short window, keep syntactically valid customN references so
+    // background inheritance is preserved; the player recompiles after the
+    // repository is ready and performs the strict existence check then.
+    const customBackgroundsReady = options.customBackgroundsReady !== false;
     const beats = [];
     const errors = [];
     const choiceEvent = parseChoiceEvent(input, errors);
@@ -200,7 +220,9 @@ export function parseBeatScript(source, options = {}) {
         if (costume) costumeByActor.set(idolId, costume);
     }
     if (options.defaultBackground) {
-        const initial = resolveBeatBackgroundAsset(options.defaultBackground, { backgrounds: [...backgrounds] });
+        const initial = isCustomBackgroundName(options.defaultBackground)
+            ? { name: String(options.defaultBackground).trim().toLowerCase(), kind: 'custom', matched: customBackgrounds.has(String(options.defaultBackground).trim().toLowerCase()) || !customBackgroundsReady }
+            : resolveBeatBackgroundAsset(options.defaultBackground, { backgrounds: [...backgrounds] });
         if (initial.matched) { previousBackground = initial.name; previousBackgroundAsset = initial; }
     }
 
@@ -299,14 +321,12 @@ export function parseBeatScript(source, options = {}) {
             // A 2D NPC face must never change the last visible idol's morphs.
             validOverlays = [];
             validEffects = [];
-        } else if (motionFile || faceMotion) {
-            validOverlays = [];
-        } else if (bodySpec) face ||= bodySpec.defaultFace;
-        else {
-            if (face) addError(errors, 'paired-face', '成套动作自带表情，已忽略独立 face。', openIndex, beatId);
-            if (validOverlays.length) addError(errors, 'paired-overlay', '叠加动作需搭配独立身体动作，已忽略 overlay。', openIndex, beatId);
-            face = '';
-            validOverlays = [];
+        } else if (!motionFile && !faceMotion) {
+            if (bodySpec) face ||= bodySpec.defaultFace;
+            else {
+                if (face) addError(errors, 'paired-face', '成套动作自带表情，已忽略独立 face。', openIndex, beatId);
+                face = '';
+            }
         }
         if (validOverlays.length > 1) {
             addError(errors, 'conflicting-overlays', '同一段只能选择点头或摇头的一种叠加，已保留第一项。', openIndex, beatId);
@@ -328,7 +348,8 @@ export function parseBeatScript(source, options = {}) {
             addError(errors, 'deprecated-camera-motion', 'camera-motion/camera-ease/camera-duration 已停用；camera 直接作用于 2D 和 3D 景别。', openIndex, beatId);
         }
 
-        const look = attributes.look || previousLook;
+        const requestedLook = String(attributes.look || previousLook || 'auto').trim();
+        const look = ['producer', '制作人'].includes(requestedLook.toLowerCase()) ? 'camera' : requestedLook;
         let position = String(attributes.position || '').trim().toLowerCase();
         if (position === 'middle') position = 'center';
         if (position && !positions.has(position)) {
@@ -337,12 +358,14 @@ export function parseBeatScript(source, options = {}) {
         }
         if (attributes.background) {
             const requestedBackground = String(attributes.background).trim();
-            const resolvedBackground = resolveBeatBackgroundAsset(requestedBackground, {
-                backgrounds: [...backgrounds],
-                category: options.backgroundCategory || '',
-                context: options.backgroundContext || '',
-            });
-            if ((backgrounds.size || resolvedBackground.kind === '3d' || resolvedBackground.categoryMismatch) && !resolvedBackground.matched) {
+            const resolvedBackground = isCustomBackgroundName(requestedBackground)
+                ? { name: requestedBackground.toLowerCase(), kind: 'custom', matched: customBackgrounds.has(requestedBackground.toLowerCase()) || !customBackgroundsReady }
+                : resolveBeatBackgroundAsset(requestedBackground, {
+                    backgrounds: [...backgrounds],
+                    category: options.backgroundCategory || '',
+                    context: options.backgroundContext || '',
+                });
+            if ((backgrounds.size || resolvedBackground.kind === '3d' || resolvedBackground.categoryMismatch || resolvedBackground.kind === 'custom') && !resolvedBackground.matched) {
                 addError(errors, 'unknown-background', `未知背景：${requestedBackground}，已沿用上一背景。`, openIndex, beatId);
             } else {
                 previousBackground = resolvedBackground.name || requestedBackground;
@@ -361,7 +384,7 @@ export function parseBeatScript(source, options = {}) {
             addError(errors, 'unknown-transition', `未知转场：${requestedTransition}，已忽略。`, openIndex, beatId);
         }
 
-        const beat = { id: beatId, speaker, cue, look, shot, text, wait };
+        const beat = { id: beatId, speaker, cue, look, shot, text, wait, backgroundExplicit: Boolean(attributes.background) };
         if (transition) beat.transition = transition;
         if (localized.ttsText && isFishVoicedSpeaker(speaker)) beat.ttsText = localized.ttsText;
         if (face) beat.face = face;
@@ -408,6 +431,16 @@ export function parseBeatScript(source, options = {}) {
             addError(errors, 'invalid-actor-move', 'actor-move 需要起点 x,y,z,朝向，终点 x,y,z,朝向，以及秒数，已忽略。', openIndex, beatId);
         }
         if (actorMove) beat.actorMove = actorMove;
+        // Per-beat presentation switches. They do not carry over: the next
+        // beat shows the dialogue box and the actors again unless it says so.
+        for (const [attribute, field, label] of [
+            ['hide-dialogue', 'hideDialogue', '对话框'],
+            ['hide-actors', 'hideActors', '角色'],
+        ]) {
+            const flag = parseCameraWalk(attributes[attribute]);
+            if (flag === true) beat[field] = true;
+            else if (flag == null) addError(errors, `invalid-${attribute}`, `${attribute} 只能写 1（本段隐藏${label}），已忽略。`, openIndex, beatId);
+        }
         beats.push(beat);
         previousLook = look;
         previousShot = shot;

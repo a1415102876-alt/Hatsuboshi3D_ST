@@ -1,4 +1,4 @@
-import { parseBeatScript } from './beat-protocol.js?v=20261026-cue-words-v1';
+import { parseBeatScript } from './beat-protocol.js?v=20261113-hkne-onsen-v1';
 import { activateTavernWorldbook, importTavernWorldbook } from './worldbook-scan.js';
 
 const DEFAULT_BACKGROUND = '家·教室（午）';
@@ -70,8 +70,8 @@ function jsonBeatsToScript(source) {
 export function beatStageHint() {
     return [
         '按 Beat 演出写在场的人、站位和镜头。',
-        '偶像可以用：藤田琴音、有村麻央、姬崎莉波、花海咲季、花海佑芽、紫云清夏、葛城莉莉娅、十王星南、秦谷美铃、雨夜燕、月村手毬、仓本千奈、筱泽广、亚纱里老师。只写这一场确实在场的人，不要把不在场的人拉进来。制作人用 producer，旁白用 narrator。',
-        'position 用 left、center 或 right。look 用 camera，或看向在场的人。',
+        '偶像可以用：藤田琴音、有村麻央、姬崎莉波、花海咲季、花海佑芽、紫云清夏、葛城莉莉娅、十王星南、秦谷美铃、雨夜燕、月村手毬、仓本千奈、筱泽广、贺阳燐羽、冰渡香名江、亚纱里老师。只写这一场确实在场的人，不要把不在场的人拉进来。制作人用 producer，旁白用 narrator。',
+        'position 用 left、center 或 right。look 用 camera，或看向在场的人。偶像对制作人说话或面向制作人交流时必须用 camera，禁止 look="producer"。',
         'shot 用 wide、medium、close、reaction 或 keep。wide 能同时看到左右站位的人。',
         '需要改变构图时写 camera="wide|medium|close|reaction|keep"；camera 与 shot 使用同一组景别，并同时作用于 2D 背景和 3D 场景。camera-motion、camera-ease、camera-duration 三个字段已停用。没有必要就省略 camera。',
     ].join('\n');
@@ -141,7 +141,7 @@ export function buildChatPrompt({ idolName, userText, background = DEFAULT_BACKG
             staging
                 ? '输出 8 到 12 个 <beat>...</beat>，大约 10 个。顺着玩家的话往下聊，可以有来回，不要两三句就结束。不要输出解释、Markdown 代码围栏、VN 的 <dialogue>、旧格式标签或 NIA 结构。'
                 : '只输出 2 到 4 个 <beat>...</beat>，不要输出解释、Markdown 代码围栏或 NIA 结构。',
-            '名单里的偶像用她自己的名字做 speaker，写出她本人的台词。制作人用 producer，旁白用 narrator。不要用旁白转述偶像说的话。',
+            '名单里的偶像用她自己的名字做 speaker，写出她本人的台词。制作人用 producer，旁白用 narrator。不要用旁白转述偶像说的话。偶像对制作人说话或面向制作人交流时必须写 look="camera"，不要写 look="producer"。',
             staging ? beatStageHint() : 'position 用 left、center 或 right。shot 用 medium。',
             '每个偶像的 Beat 都要同时写中文和日语：<display lang="zh">玩家看到的中文</display><tts lang="ja">给 Fish 朗读的日语</tts>。制作人和旁白不要写 tts。没有与担当的互动，relationship_update 写 0。不要写夸奖标记。',
             status,
@@ -166,7 +166,7 @@ export function buildChatPrompt({ idolName, userText, background = DEFAULT_BACKG
             : `每个情绪或动作变化拆成独立 Beat；speaker 使用 ${idol}，只有确实需要制作人回应时才使用 producer。`,
         staging
             ? '每个偶像的 Beat 都写 cue、face、look、position。background 保持当前场景。'
-            : '每个 Beat 都使用 cue、face、look、position、background 和 shot 等现有字段；background 固定为当前场景，shot 固定为 medium，position 固定为 center。',
+            : '每个 Beat 都使用 cue、face、look、position、background 和 shot 等现有字段；background 固定为当前场景，shot 固定为 medium，position 固定为 center。偶像对制作人说话或面向制作人交流时必须写 look="camera"，不要写 look="producer"。',
         '回复应自然承接玩家的话，保持角色口吻。',
         staging
             ? '每个偶像的 Beat 都要同时写中文和日语：<display lang="zh">玩家看到的中文</display><tts lang="ja">给 Fish 朗读的日语</tts>。两句意思对应。制作人、旁白和没有模型台词的人不要写 tts。'
@@ -483,9 +483,14 @@ export function extractChatPlayerLine(prompt) {
     return (String(prompt || '').match(/玩家说：([\s\S]*)$/) || [])[1]?.trim() || '';
 }
 
-export function assembleLocalChatMessages({ systemPrompt = '', worldEntries = [], history = [], userPrompt = '' } = {}) {
+export function assembleLocalChatMessages({ systemPrompt = '', worldEntries = [], history = [], userPrompt = '', producerProfile = '', memories = '' } = {}) {
     const lore = worldEntries.map(entry => entry.content.trim()).filter(Boolean).join('\n\n');
-    const system = [String(systemPrompt || '').trim(), lore ? `【世界书】\n${lore}` : ''].filter(Boolean).join('\n\n');
+    const system = [
+        String(systemPrompt || '').trim(),
+        lore ? `【世界书】\n${lore}` : '',
+        String(producerProfile || '').trim() ? `【制作人档案】\n以下是与你交谈的制作人的自我设定。请据此理解对方的身份、称呼和背景，不要把制作人的资料当作偶像的设定，也不要代替制作人说话。\n${String(producerProfile).trim()}` : '',
+        String(memories || '').trim() ? `【与当前偶像的历史聊天记忆】\n以下是较早的对话摘录，仅用于回忆已经聊过的事情；与近期对话冲突时以近期对话为准。\n${String(memories).trim()}` : '',
+    ].filter(Boolean).join('\n\n');
     const messages = [];
     if (system) messages.push({ role: 'system', content: system });
     for (const item of history) {
@@ -540,7 +545,7 @@ function chatWorldbookEntries(settings, scanMessages, idol) {
  * Browser chat-completion bridge. It keeps the Beat player's send/requestContext
  * shape, and supplies the worldbook plus recent turns that SillyTavern used to inject.
  */
-export function createLocalChatBridge({ fetchImpl = globalThis.fetch, getSettings, timeoutMs = DEFAULT_TIMEOUT, historyLimit = 8, currentDay, onRemember } = {}) {
+export function createLocalChatBridge({ fetchImpl = globalThis.fetch, getSettings, timeoutMs = DEFAULT_TIMEOUT, historyLimit = 8, currentDay, onRemember, loadHistory, onExchange, onHistoryError } = {}) {
     const histories = new Map();
     let disposed = false;
 
@@ -617,7 +622,20 @@ export function createLocalChatBridge({ fetchImpl = globalThis.fetch, getSetting
             const bookSettings = worldbookOverride == null ? settings : { ...settings, worldbookEntries: worldbookOverride };
             const playerLine = extractChatPlayerLine(text);
             const active = dayOf();
-            const history = useHistory ? turnsFor(idol).filter(turn => !active || Number(turn.day) === active) : [];
+            let history = useHistory ? turnsFor(idol).filter(turn => !active || Number(turn.day) === active) : [];
+            let memories = '';
+            if (useHistory && typeof loadHistory === 'function') {
+                try {
+                    const saved = await loadHistory(idol, playerLine || text);
+                    if (Array.isArray(saved?.history) && saved.history.length) {
+                        // A failed archive write must not hide this page's newer turns.
+                        const lastSaved = saved.history.at(-1);
+                        const overlap = lastSaved?.id ? history.findLastIndex(turn => turn.id === lastSaved.id) : -1;
+                        history = [...saved.history, ...(overlap >= 0 ? history.slice(overlap + 1) : [])];
+                    }
+                    memories = String(saved?.memories || '');
+                } catch (error) { onHistoryError?.(error, 'read'); }
+            }
             const scanMessages = [text, ...[...history].reverse().map(turn => turn.content)];
             const messages = assembleLocalChatMessages({
                 systemPrompt: applyChatPreset(
@@ -627,6 +645,8 @@ export function createLocalChatBridge({ fetchImpl = globalThis.fetch, getSetting
                 worldEntries: useWorldbook ? chatWorldbookEntries(bookSettings, scanMessages, idol) : [],
                 history: history.map(turn => ({ role: turn.role, content: turn.content })),
                 userPrompt: text,
+                producerProfile: useHistory ? settings.producerProfile : '',
+                memories,
             });
             const controller = new AbortController();
             const onExternalAbort = () => controller.abort();
@@ -707,8 +727,19 @@ export function createLocalChatBridge({ fetchImpl = globalThis.fetch, getSetting
                     error.closedBeatCount = (reply.match(/<beat\b[^>]*>[\s\S]*?<\/beat>/gi) || []).length;
                     throw error;
                 }
-                if (useHistory && playerLine) remember(idol, { role: 'user', content: `玩家说：${playerLine}`, text: playerLine, label: '你' });
-                if (useHistory) remember(idol, { role: 'assistant', content: normalized.script, text: chatDisplayText(normalized.beats), label: idol || '偶像' });
+                if (controller.signal.aborted) {
+                    const aborted = new Error('请求已取消');
+                    aborted.name = 'AbortError';
+                    throw aborted;
+                }
+                const user = playerLine ? { id: `${requestId}-user`, role: 'user', content: `玩家说：${playerLine}`, text: playerLine, label: '你' } : null;
+                const assistant = { id: `${requestId}-assistant`, role: 'assistant', content: normalized.script, text: chatDisplayText(normalized.beats), label: idol || '偶像' };
+                if (useHistory && user) remember(idol, user);
+                if (useHistory) remember(idol, assistant);
+                if (useHistory && user && typeof onExchange === 'function') {
+                    try { await onExchange(idol, { user, assistant, requestId }); }
+                    catch (error) { onHistoryError?.(error, 'write'); }
+                }
                 return {
                     requestId,
                     channelLeaseId: 'local',

@@ -39,7 +39,10 @@ export async function build(){
  const origin=publicOrigin();
  const snapshot=JSON.parse(await fs.readFile(path.join(root,'docs/source-snapshot.json')));
  const localMedia=[...snapshot.mediaMissing,...snapshot.mediaUnverified].map(item=>item.path);
- for(const dir of ['hatsu-produce-local','mmd-dialogue-stage'])await fs.cp(path.join(root,dir),path.join(dist,dir),{recursive:true});
+ for(const dir of ['hatsu-produce-local','mmd-dialogue-stage'])await fs.cp(path.join(root,dir),path.join(dist,dir),{
+  recursive:true,
+  filter:file=>path.relative(path.join(root,dir),file).split(path.sep)[0]!=='tests'
+ });
  for(const name of ['st.html','app.js']){
   const file=path.join(dist,'hatsu-produce-local',name);
   await fs.writeFile(file,adaptFrontend(await fs.readFile(file,'utf8'),name,origin,localMedia));

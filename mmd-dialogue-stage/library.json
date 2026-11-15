@@ -284,6 +284,26 @@
       "textureDir": "Texture2D",
       "note": "已导出CASL；Gakumas Shader补充贴图已接入；GLB 专用 krnh-casl 二次运动 profile 已接入（本次 capture 未验证原生算法执行与 Transform 写回）",
       "secondaryMotionProfile": false
+    },
+    {
+      "id": "hkne",
+      "name": "冰渡香名江",
+      "outfit": "OTHR-0004",
+      "pack": "idols/hkne-othr-0004",
+      "model": "hkne-othr-0004.glb",
+      "textureDir": "Texture2D",
+      "secondaryMotionProfile": "hkne-othr-0004",
+      "costumes": {
+        "Onsen": {
+          "outfit": "ONSEN",
+          "name": "温泉服",
+          "pack": "idols/hkne-onsen",
+          "model": "hkne-head_hume-onsen.glb",
+          "textureDir": "Texture2D",
+          "secondaryMotionProfile": "hkne-onsen",
+          "note": "佑芽温泉服身体（hume-othr-0000）+ 香名江 hkne-base-0000 脸和头发；头发二次运动沿用 hkne-othr-0004，身体衣物暂无二次运动"
+        }
+      }
     }
   ],
   "packs": {
@@ -407,6 +427,10 @@
       "root": "G:\\SillyTavern\\SillyTavern\\tools\\gakumas-motion-workbench\\generated\\dedicated-vmd\\fktn",
       "r2Prefix": "motions/fktn-dedicated-body"
     },
+    "motions/hkne-dedicated-body": {
+      "root": "E:/gakumas-motion-batches/hkne-20261111/vmd",
+      "r2Prefix": "motions/hkne-dedicated-body"
+    },
     "scenes/gakumas": {
       "root": "G:\\SillyTavern\\SillyTavern\\public\\mmd-dialogue-stage\\scenes",
       "r2Prefix": "scenes"
@@ -418,6 +442,10 @@
     "idols/krnh": {
       "root": "G:/SillyTavern/SillyTavern/public/mmd-dialogue-stage/library/file/idols/krnh",
       "r2Prefix": "idols/krnh"
+    },
+    "idols/hkne-othr-0004": {
+      "root": "E:/gakumas-pmx-workflow/output/hkne-othr-0004",
+      "r2Prefix": "idols/hkne-othr-0004"
     },
     "idols/fktn-solo1": {
       "root": "G:\\SillyTavern\\SillyTavern\\public\\mmd-dialogue-stage\\library\\file\\idols\\fktn-solo1",
@@ -478,6 +506,10 @@
     "idols/atbm-solo1": {
       "root": "E:/gakumas-pmx-workflow/output/solo1-20261013/atbm-cstm-0106",
       "r2Prefix": "idols/atbm-solo1"
+    },
+    "idols/hkne-onsen": {
+      "root": "E:/gakumas-pmx-workflow/hkne-hume-onsen-20261112/models/hkne-onsen",
+      "r2Prefix": "idols/hkne-onsen"
     }
   },
   "scenes": [

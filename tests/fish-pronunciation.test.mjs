@@ -27,6 +27,10 @@ const expected=[
  ['姬崎莉波','ひめさき　りなみ','himesakirinami'],
  ['十王星南','じゅうおう　せな','juuoosena'],
  ['雨夜燕','あまや　つばめ','amayatsubame'],
+ ['賀陽燐羽','かや　りんは','kayariNha'],
+ ['贺阳燐羽','かや　りんは','kayariNha'],
+ ['根緒亜紗里','ねづ　あさり','nezuasari'],
+ ['根绪亚纱里','ねづ　あさり','nezuasari'],
  ['shiun sumika','しうん　すみか','shiuNsumika'],
  ['shiun-sumika','しうん　すみか','shiuNsumika'],
  ['arimura mao','ありむら　まお','arimuramao'],
@@ -49,6 +53,15 @@ const expected=[
  ['星南','せな','sena'],
  ['初星','はつぼし','hatsuboshi'],
  ['燕','つばめ','tsubame'],
+ ['燐羽','りんは','riNha'],
+ ['亚纱里','あさり','asari'],
+ ['亜紗里','あさり','asari'],
+ ['冰渡香名江','ひわたり　かなえ','hiwatarikanae'],
+ ['氷渡香名江','ひわたり　かなえ','hiwatarikanae'],
+ ['香名江','かなえ','kanae'],
+ ['Hiwatari Kanae','ひわたり　かなえ','hiwatarikanae'],
+ ['hiwatari-kanae','ひわたり　かなえ','hiwatarikanae'],
+ ['kanae','かなえ','kanae'],
  ['毬','まり','mari']
 ];
 function client(fetch){

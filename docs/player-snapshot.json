@@ -1,0 +1,20 @@
+{
+  "generatedAt": "2026-11-15T11:54:27.142Z",
+  "source": "G:\\SillyTavern\\gakumas-player",
+  "preserved": [
+    "index.html",
+    "app.js",
+    "worldbook-scan.js"
+  ],
+  "adapted": [
+    "library.json",
+    "library-client.js",
+    "stage-props.js"
+  ],
+  "frontendAssets": 16,
+  "changed": [
+    "mmd-dialogue-stage/gakumas-color-grade.js",
+    "mmd-dialogue-stage/tests/scene-grade-lut.test.mjs",
+    "mmd-dialogue-stage/tests/fixtures/changing-room-lut-samples.json"
+  ]
+}

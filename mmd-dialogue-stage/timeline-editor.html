@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#16181d">
+  <title>Timeline 编辑器</title>
+  <link rel="icon" href="./assets/star.png">
+  <link rel="stylesheet" href="./beat-player.css?v=20261106-hide-2d-floor-v1">
+  <link rel="stylesheet" href="./timeline-editor.css?v=20261114-timeline-v3">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./vendor/three/build/three.module.js",
+        "three/addons/": "./vendor/three/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body class="tl-page">
+  <div class="tl-app">
+    <header class="tl-topbar">
+      <div class="tl-brand"><span class="tl-brand-mark" aria-hidden="true"></span><strong>Timeline</strong></div>
+      <input id="tlTitle" class="tl-title-input" type="text" maxlength="120" aria-label="Timeline 标题" spellcheck="false">
+      <div class="tl-topbar-actions" role="toolbar" aria-label="文件与编辑">
+        <button id="tlNewBtn" class="tl-btn" type="button" title="新建 Timeline">新建</button>
+        <label class="tl-btn" title="打开 .json Timeline 文件">打开<input id="tlOpenFile" type="file" accept=".json,application/json" hidden></label>
+        <button id="tlSaveBtn" class="tl-btn" type="button" title="保存为 .json 文件（Ctrl+S）">导出文件</button>
+        <span class="tl-divider" aria-hidden="true"></span>
+        <button id="tlUndoBtn" class="tl-btn" type="button" title="撤销（Ctrl+Z）" disabled>撤销</button>
+        <button id="tlRedoBtn" class="tl-btn" type="button" title="重做（Ctrl+Shift+Z）" disabled>重做</button>
+        <span class="tl-divider" aria-hidden="true"></span>
+        <button id="tlHelpBtn" class="tl-btn" type="button" aria-controls="tlHelp" title="快捷键与操作说明">操作说明</button>
+        <a class="tl-btn" href="./gakumas-player.html">返回播放器</a>
+      </div>
+    </header>
+
+    <aside class="tl-panel tl-left" aria-label="场景与角色">
+      <section class="tl-section">
+        <h2 class="tl-section-title">时长</h2>
+        <label class="tl-field">总时长（秒）<input id="tlDuration" type="number" min="1" max="600" step="0.5"></label>
+      </section>
+      <section class="tl-section">
+        <h2 class="tl-section-title">角色</h2>
+        <ul id="tlCastList" class="tl-cast-list" aria-label="出场角色"></ul>
+        <div class="tl-row">
+          <select id="tlCastAdd" aria-label="添加角色"></select>
+          <button id="tlCastAddBtn" class="tl-btn" type="button">添加</button>
+        </div>
+        <p class="tl-hint">每个角色有“动作 / 表情”和“站位”两条轨道。出场和退场时间之外角色不可见。</p>
+      </section>
+      <section class="tl-section">
+        <h2 class="tl-section-title">资源</h2>
+        <p id="tlLoadState" class="tl-load-state" role="status">等待加载</p>
+        <button id="tlReloadBtn" class="tl-btn" type="button">重新加载资源</button>
+      </section>
+    </aside>
+
+    <main class="tl-viewport-panel" aria-label="预览">
+      <div class="tl-viewport-tools" role="toolbar" aria-label="视角">
+        <div class="tl-segment" role="radiogroup" aria-label="摄像机模式">
+          <button id="tlCamFollow" class="tl-seg" type="button" role="radio" aria-checked="true" title="画面跟随摄像机轨道">轨道机位</button>
+          <button id="tlCamFree" class="tl-seg" type="button" role="radio" aria-checked="false" title="自由移动摄像机取景，再打关键帧">自由取景</button>
+        </div>
+        <button id="tlCamKeyBtn" class="tl-btn tl-btn-accent" type="button" title="在播放头位置记录当前视角（K）">◆ 记录机位</button>
+        <span id="tlCamReadout" class="tl-readout" aria-live="off"></span>
+      </div>
+      <div class="tl-viewport-frame">
+        <div id="tlStage" class="beat-stage tl-stage" data-shot="keep" aria-label="Timeline 预览舞台">
+          <div id="tlStageBackground" class="beat-background" aria-hidden="true"></div>
+          <div id="tlFade" class="tl-fade" aria-hidden="true"></div>
+          <div class="tl-dialogue" id="tlDialogue" hidden>
+            <div class="tl-dialogue-speaker" id="tlDialogueSpeaker"></div>
+            <p class="tl-dialogue-text" id="tlDialogueText"></p>
+          </div>
+          <div id="tlNavSurface" class="tl-nav-surface" tabindex="0" aria-label="自由取景区域：拖动旋转，右键或 Shift 拖动平移，滚轮推拉，WASD/QE 移动" hidden></div>
+          <div id="tlNavHint" class="tl-nav-hint" hidden>左键拖动 旋转 · 右键 / Shift+拖动 平移 · 滚轮 推拉 · WASD / Q E 移动 · Shift 加速</div>
+        </div>
+      </div>
+    </main>
+
+    <aside class="tl-panel tl-right" aria-label="属性">
+      <h2 class="tl-section-title" id="tlInspectorTitle">属性</h2>
+      <div id="tlInspector" class="tl-inspector"></div>
+    </aside>
+
+    <section class="tl-timeline" aria-label="时间轴">
+      <div class="tl-transport" role="toolbar" aria-label="播放控制">
+        <button id="tlToStart" class="tl-icon-btn" type="button" title="回到开头（Home）" aria-label="回到开头">⏮</button>
+        <button id="tlPrevFrame" class="tl-icon-btn" type="button" title="上一帧（←）" aria-label="上一帧">◀︎</button>
+        <button id="tlPlay" class="tl-icon-btn tl-play" type="button" title="播放 / 暂停（空格）" aria-label="播放">▶</button>
+        <button id="tlNextFrame" class="tl-icon-btn" type="button" title="下一帧（→）" aria-label="下一帧">▶︎</button>
+        <button id="tlToEnd" class="tl-icon-btn" type="button" title="跳到结尾（End）" aria-label="跳到结尾">⏭</button>
+        <output id="tlTimecode" class="tl-timecode" aria-label="当前时间">00:00:00</output>
+        <span class="tl-timecode-total" id="tlTotal">/ 00:00:00</span>
+        <label class="tl-check" title="循环播放"><input id="tlLoop" type="checkbox"><span>循环</span></label>
+        <label class="tl-inline">速度<select id="tlSpeed"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option></select></label>
+        <span class="tl-spacer"></span>
+        <label class="tl-check" title="拖动时吸附到片段边缘、关键帧和播放头"><input id="tlSnap" type="checkbox" checked><span>吸附</span></label>
+        <button id="tlSplitBtn" class="tl-btn" type="button" title="在播放头切开选中片段（S）">切开</button>
+        <button id="tlDeleteBtn" class="tl-btn" type="button" title="删除选中（Delete）">删除</button>
+        <label class="tl-inline tl-zoom">缩放<input id="tlZoom" type="range" min="10" max="600" step="1" value="90" aria-label="时间轴缩放"></label>
+        <button id="tlFitBtn" class="tl-btn" type="button" title="缩放到完整时长（F）">全部</button>
+      </div>
+      <div class="tl-tracks" id="tlTracks">
+        <div class="tl-headers" id="tlHeaders">
+          <div class="tl-ruler-corner">轨道</div>
+        </div>
+        <div class="tl-lanes-scroll" id="tlLanesScroll">
+          <div class="tl-lanes" id="tlLanes">
+            <div class="tl-ruler" id="tlRuler" aria-label="时间标尺，拖动定位播放头"></div>
+            <div class="tl-lane-rows" id="tlLaneRows"></div>
+            <div class="tl-playhead" id="tlPlayhead" aria-hidden="true"><span></span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <dialog id="tlHelp" class="tl-help" aria-labelledby="tlHelpTitle">
+    <form method="dialog">
+      <h2 id="tlHelpTitle">操作说明</h2>
+      <div class="tl-help-grid">
+        <section>
+          <h3>时间轴</h3>
+          <ul>
+            <li><kbd>双击</kbd> 空白轨道：添加片段或关键帧</li>
+            <li><kbd>拖动</kbd> 片段 / 关键帧：移动（自动吸附）</li>
+            <li><kbd>拖动</kbd> 片段两端：调整入点和出点</li>
+            <li><kbd>Shift</kbd>+点击：多选</li>
+            <li>拖动顶部标尺：定位播放头</li>
+            <li><kbd>Ctrl</kbd>+滚轮：缩放时间轴</li>
+          </ul>
+        </section>
+        <section>
+          <h3>快捷键</h3>
+          <ul>
+            <li><kbd>空格</kbd> 播放 / 暂停</li>
+            <li><kbd>←</kbd> <kbd>→</kbd> 上一帧 / 下一帧，加 <kbd>Shift</kbd> 跳 1 秒</li>
+            <li><kbd>Home</kbd> <kbd>End</kbd> 开头 / 结尾</li>
+            <li><kbd>K</kbd> 在播放头记录摄像机关键帧</li>
+            <li><kbd>S</kbd> 切开片段 · <kbd>Ctrl</kbd>+<kbd>D</kbd> 复制</li>
+            <li><kbd>Delete</kbd> 删除 · <kbd>Ctrl</kbd>+<kbd>Z</kbd> 撤销</li>
+          </ul>
+        </section>
+        <section>
+          <h3>摄像机</h3>
+          <ul>
+            <li>切到“自由取景”，在画面里拖动取景，再按 <kbd>K</kbd> 记录</li>
+            <li>关键帧之间按“插值”平滑过渡；“定格”表示硬切</li>
+            <li>没有摄像机关键帧时，使用场景默认机位</li>
+          </ul>
+        </section>
+      </div>
+      <button class="tl-btn tl-btn-accent" value="close">知道了</button>
+    </form>
+  </dialog>
+
+  <div id="tlToast" class="tl-toast" role="status" aria-live="polite" hidden></div>
+
+  <!-- BeatPlayerApp needs these nodes; the timeline draws its own dialogue. -->
+  <div hidden>
+    <textarea id="tlBeatScript"></textarea>
+    <div id="tlBeatDialogueCard"><img id="tlBeatPortrait" alt=""><strong id="tlBeatSpeaker"></strong><p id="tlBeatText"></p></div>
+    <div id="tlBeatChoices"><div id="tlBeatChoiceList"></div></div>
+    <span id="tlBeatShot"></span><span id="tlBeatStatus"></span><span id="tlBeatProgress"></span><ul id="tlBeatDiagnostics"></ul>
+  </div>
+  <script src="./fish-tts.js?v=20261111-hkne-voice-v1"></script>
+  <script type="module" src="./timeline-editor.js?v=20261114-sun-shadow-v1"></script>
+</body>
+</html>

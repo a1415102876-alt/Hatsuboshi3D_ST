@@ -8,15 +8,19 @@
   const MISUZU_REFERENCE_ID = "de0abe9c782f49bc9c22363cae7eb2f1";
   const LILJA_REFERENCE_ID = "6af0b79d645d43928e6adbe8d1d0606b";
   const SENA_REFERENCE_ID = "9934972619db41f4b6364f5e0ffc9fb0";
-  const UME_REFERENCE_ID = "ce90bb98872a4cf0a81c39f1fc24707e";
+  const UME_REFERENCE_ID = "aeeef9c2e372438eab37016bed03cceb";
   const RINAMI_REFERENCE_ID = "fb23cd92823d4274a517d7d5bb3340ec";
   const CHINA_REFERENCE_ID = "f6e6061c803c4d8fa371fdf658c35e2a";
   const TSUBAME_REFERENCE_ID = "39d27c7315044ebab7997e160b2d7f74";
   const SUMIKA_REFERENCE_ID = "4199b1062c28461ca822d130138e99d1";
   const MAO_REFERENCE_ID = "4199b1062c28461ca822d130138e99d1";
-  const DEFAULT_WORKER_ORIGIN = "https://hatsuboshitest.a1415102876.workers.dev";
+  const RINHA_REFERENCE_ID = "7eee5c0eca834d529902e9bfcd810d7f";
+  const ASARI_REFERENCE_ID = "d58dc7b87a554a72a03c6cfd64b53816";
+  const KANAE_REFERENCE_ID = "df77ae3e7b3b45798c0641f6a2fe928f";
+  const DEFAULT_WORKER_ORIGIN = "https://tts.sawadaz.xyz";
+  const LEGACY_PROXY_URL = "https://hatsuboshitest.a1415102876.workers.dev/api/fish-tts";
   const DEFAULT_MODEL = "s2.1-pro-free";
-  const PRONUNCIATION_VERSION = "20261027-name-dict-v1";
+  const PRONUNCIATION_VERSION = "20261112-hkne-hiwatari-kanae-v1";
   // User-supplied kana readings; generated offline with tools/generate-fish-pronunciation.py.
   // Pitch is OpenJTalk's default inference, not extracted game voice accent.
   // Spoken lines use full names, given names, and the simplified Chinese spellings.
@@ -43,6 +47,10 @@
     ["姬崎莉波", "ひめさき　りなみ", "hi1me0sa0ki0ri0na1mi0"],
     ["十王星南", "じゅうおう　せな", "ju0u1o1o1se1na0"],
     ["雨夜燕", "あまや　つばめ", "a1ma0ya0tsu0ba1me1"],
+    ["賀陽燐羽", "かや　りんは", "ka1ya0ri1N1ha0"],
+    ["贺阳燐羽", "かや　りんは", "ka1ya0ri1N1ha0"],
+    ["根緒亜紗里", "ねづ　あさり", "ne1zu0a1sa0ri0"],
+    ["根绪亚纱里", "ねづ　あさり", "ne1zu0a1sa0ri0"],
     ["shiun sumika", "しうん　すみか", "shi0u1N1su1mi0ka0"],
     ["shiun-sumika", "しうん　すみか", "shi0u1N1su1mi0ka0"],
     ["arimura mao", "ありむら　まお", "a1ri0mu0ra1ma0o1"],
@@ -65,6 +73,15 @@
     ["星南", "せな", "se1na0"],
     ["初星", "はつぼし", "ha0tsu1bo0shi0"],
     ["燕", "つばめ", "tsu0ba1me1"],
+    ["燐羽", "りんは", "ri1N1ha0"],
+    ["亚纱里", "あさり", "a1sa0ri0"],
+    ["亜紗里", "あさり", "a1sa0ri0"],
+    ["冰渡香名江", "ひわたり　かなえ", "hi1wa0ta1ri0ka1na1e0"],
+    ["氷渡香名江", "ひわたり　かなえ", "hi1wa0ta1ri0ka1na1e0"],
+    ["香名江", "かなえ", "ka1na1e0"],
+    ["Hiwatari Kanae", "ひわたり　かなえ", "hi1wa0ta1ri0ka1na1e0"],
+    ["hiwatari-kanae", "ひわたり　かなえ", "hi1wa0ta1ri0ka1na1e0"],
+    ["kanae", "かなえ", "ka1na1e0"],
     ["毬", "まり", "ma0ri1"]
   ].map(([key, reading, value]) => Object.freeze({ key, reading, value })));
   const ALLOWED_TAGS = Object.freeze(["soft", "pause", "long pause", "emphasis", "excited", "sighing"]);
@@ -139,7 +156,33 @@
     ["arimura mao", MAO_REFERENCE_ID],
     ["arimura-mao", MAO_REFERENCE_ID],
     ["有村麻央", MAO_REFERENCE_ID],
-    ["麻央", MAO_REFERENCE_ID]
+    ["麻央", MAO_REFERENCE_ID],
+    ["krnh", RINHA_REFERENCE_ID],
+    ["rinha", RINHA_REFERENCE_ID],
+    ["kaya rinha", RINHA_REFERENCE_ID],
+    ["kaya-rinha", RINHA_REFERENCE_ID],
+    ["贺阳燐羽", RINHA_REFERENCE_ID],
+    ["賀陽燐羽", RINHA_REFERENCE_ID],
+    ["燐羽", RINHA_REFERENCE_ID],
+    ["小燐", RINHA_REFERENCE_ID],
+    ["nasr", ASARI_REFERENCE_ID],
+    ["asari", ASARI_REFERENCE_ID],
+    ["nezu asari", ASARI_REFERENCE_ID],
+    ["nezu-asari", ASARI_REFERENCE_ID],
+    ["根绪亚纱里", ASARI_REFERENCE_ID],
+    ["根緒亜紗里", ASARI_REFERENCE_ID],
+    ["亚纱里", ASARI_REFERENCE_ID],
+    ["亚纱里老师", ASARI_REFERENCE_ID],
+    ["亜紗里", ASARI_REFERENCE_ID],
+    ["hkne", KANAE_REFERENCE_ID],
+    ["kanae", KANAE_REFERENCE_ID],
+    ["hiwatari kanae", KANAE_REFERENCE_ID],
+    ["hiwatari-kanae", KANAE_REFERENCE_ID],
+    ["hido kanae", KANAE_REFERENCE_ID],
+    ["hido-kanae", KANAE_REFERENCE_ID],
+    ["冰渡香名江", KANAE_REFERENCE_ID],
+    ["氷渡香名江", KANAE_REFERENCE_ID],
+    ["香名江", KANAE_REFERENCE_ID]
   ]);
 
   const state = {
@@ -182,8 +225,8 @@
   }
 
   function normalizeProxyUrl(value) {
-    const candidate = String(value || "").trim();
-    if (!candidate || /^\/api\/fish-tts\/?$/i.test(candidate)) return `${DEFAULT_WORKER_ORIGIN}/api/fish-tts`;
+    const candidate = String(value || "").replace(/\s+/g, "");
+    if (!candidate || /^\/api\/fish-tts\/?$/i.test(candidate) || candidate.replace(/\/+$/, "") === LEGACY_PROXY_URL) return `${DEFAULT_WORKER_ORIGIN}/api/fish-tts`;
     return candidate;
   }
 
@@ -229,6 +272,9 @@
     if (/(?:^|\s)(?:hume|ume|hanami\s+ume)(?:$|\s)/i.test(normalized)) return UME_REFERENCE_ID;
     if (/(?:^|\s)(?:hrnm|rinami|himesaki\s+rinami)(?:$|\s)/i.test(normalized)) return RINAMI_REFERENCE_ID;
     if (/(?:^|\s)(?:kcna|china|kuramoto\s+china)(?:$|\s)/i.test(normalized)) return CHINA_REFERENCE_ID;
+    if (/(?:^|\s)(?:krnh|rinha|kaya\s+rinha|kaya-rinha)(?:$|\s)/i.test(normalized)) return RINHA_REFERENCE_ID;
+    if (/(?:^|\s)(?:nasr|asari|nezu\s+asari|nezu-asari)(?:$|\s)/i.test(normalized)) return ASARI_REFERENCE_ID;
+    if (/(?:^|\s)(?:hkne|kanae|hiwatari\s+kanae|hiwatari-kanae|hido\s+kanae|hido-kanae)(?:$|\s)/i.test(normalized)) return KANAE_REFERENCE_ID;
     return "";
   }
 
@@ -616,6 +662,8 @@
     TSUBAME_REFERENCE_ID,
     SUMIKA_REFERENCE_ID,
     MAO_REFERENCE_ID,
+    RINHA_REFERENCE_ID,
+    ASARI_REFERENCE_ID,
     configure,
     getDefaultProxyUrl,
     getConfig,

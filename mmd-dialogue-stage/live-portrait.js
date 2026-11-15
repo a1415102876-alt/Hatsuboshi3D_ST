@@ -3,7 +3,6 @@ import { applyActorPose, applyCameraFocal, applyCameraPose } from './scene-free-
 import { MMDLoader } from 'three/addons/loaders/MMDLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MMDAnimationHelper } from 'three/addons/animation/MMDAnimationHelper.js';
-import { OutlineEffect } from 'three/addons/effects/OutlineEffect.js?v=20261005-hair-outline-v1';
 import {
     MOTION_FADE,
     buildPlaylist,
@@ -17,16 +16,17 @@ import {
     sortPlaylistByCatalog,
 } from './core.js?v=20261011-stage-cue-rules-v4';
 import { idolAssetUrls, motionAssetUrls, motionAvailability } from './library-client.js?v=20261017-browser-cache-v1';
-import { idolCostumeVariant, resolveBeatCostume } from './beat-costumes.js?v=20261013-all-idol-solo1-v1';
+import { idolCostumeVariant, resolveBeatCostume } from './beat-costumes.js?v=20261113-hkne-onsen-v1';
 import { GAKUMAS_TEXTURE_KINDS, GAKUMAS_ACTIVE_TEXTURE_KINDS, selectMaterialTextures, setTextureColorSpace, textureDescriptor, textureUsesColorSpace } from './gakumas-materials.js?v=20261105-face-layer-off-v1';
-import { injectActorShader } from './gakumas-shader.js?v=20261105-face-layer-off-v1';
+import { injectActorShader } from './gakumas-shader.js?v=20261109-actor-light-v3';
 import { actorStencilState, classifyActorPass, placeCharacterShadowLight, shouldCastCharacterShadow, shouldReceiveCharacterShadow } from './gakumas-passes.js?v=20261024-crowd-budget-v1';
-import { HairCoverStage } from './gakumas-hair-cover.js?v=20261105-face-layer-off-v1';
-import { ACTOR_ADDITIONAL_LIGHTS, GAKUMAS_LOOK, GakumasLookPass, actorEnvironmentSample, actorScenePoint, applyGakumasLookUniforms, applySceneActorUniforms, createActorRoomUniforms, createGakumasLookUniformValues, matcapKeyDirection } from './gakumas-look.js?v=20261105-capture-gap-v1';
+import { HairCoverStage } from './gakumas-hair-cover.js?v=20261109-actor-light-v3';
+import { ACTOR_ADDITIONAL_LIGHTS, GAKUMAS_LOOK, actorEnvironmentSample, actorScenePoint, applyGakumasLookUniforms, applySceneActorUniforms, createActorRoomUniforms, createGakumasLookUniformValues, matcapKeyDirection } from './gakumas-look.js?v=20261114-sun-shadow-v1';
 import { aaLevel } from './gakumas-aa.js?v=20261105-aa-level-v1';
-import { GakumasPostPass, setCaptureMotionBlur } from './gakumas-post.js?v=20261105-floor-ssr-v1';
+import { setCaptureMotionBlur } from './gakumas-post.js?v=20261114-sun-shadow-v1';
+import { StageRenderer } from './stage-renderer.js?v=20261114-sun-shadow-v1';
 import { motionFromPositions } from './gakumas-taa-motion.js?v=20261027-motion-aware-taa-v1';
-import { backgroundDepthBlur, backgroundPanAmount, stagePlateCover, zoomPlateCover } from './beat-player-core.js?v=20261027-bg-zoom-v1';
+import { backgroundDepthBlur, backgroundPanAmount, stagePlateCover, zoomPlateCover } from './beat-player-core.js?v=20261110-hkne-3d-v1';
 import { hasGakumasVertexColorAttribute } from './gakumas-outline.js?v=20260909-outline1';
 import {
     LIVE_PORTRAIT_IDOL_ID,
@@ -40,17 +40,19 @@ import { parsePortraitCue, selectPortraitPerformance, portraitPerformanceCandida
 import { StageAttentionController } from './stage-attention.js?v=20261103-adopt-base-v1';
 import { bindVisemeMorphs } from './dialogue-intent.js?v=20261011-emotion-cue-labels-v2';
 import { applyTalkMouthProfile, selectTalkMouthProfile, talkArticulationFromPhase } from './tts-lip-sync.js?v=20261107-surprise-mouth-v1';
-import { SceneDirector } from './scene-director.js?v=20261102-krnh-3d-v1';
+import { SceneDirector } from './scene-director.js?v=20261113-hkne-onsen-v1';
 import { portraitCrowdBudget } from './portrait-crowd-budget.js?v=20261024-crowd-budget-v1';
 import { configureGlbAnimationTarget, detectLivePortraitFormat } from './live-portrait-model.js';
 import { bindGlbMorphTracks } from './glb-morph-tracks.js?v=20260929-face-primitives-v1';
 import { SecondaryMotion, applyHairRestRotationRebase, rebaseHairAnimationTracks, refreshRestInverseBinds } from './gakumas-secondary-motion.js?v=20261102-krnh-sleeve-gravity-v1';
 import { SecondaryMotionProxy, physicsLead, physicsWorkerSupported } from './secondary-motion-proxy.js?v=20261106-physics-worker-v1';
 import { FacialEffectsStage } from './facial-effects-stage.js?v=20261017-browser-cache-v1';
-import { loadResourceLibrary } from './asset-runtime.js?v=20261104-krnh-motion-index-v1';
+import { loadResourceLibrary } from './asset-runtime.js?v=20261114-manifest-fix-v1';
 import { filterPreferredSitItems } from './seated-posture.js?v=20261027-seated-rollback-v1';
 import { createPerformanceBucket, recordPerformanceSample, snapshotPerformanceBucket } from './performance-monitor-core.js?v=20261030-perf-diagnostic-v2';
 import { phonePropForIdol, propVisibilityForCue, resolvePropAnchorName } from './stage-props.js';
+import { collectSceneTextures, downscaleTextureSources } from './portrait-texture-budget.js?v=20261108-texture-budget-v1';
+import { collectPostTargets, estimateImageTextureBytes, estimateRendererResources } from './gpu-resource-estimator.js?v=20261112-single-renderer-v1';
 
 function portraitMotionLoops(item) {
     const family = item?.family || item?.catalog?.family || '';
@@ -60,8 +62,12 @@ function portraitMotionLoops(item) {
     return String(item?.title || '').includes('循环');
 }
 
+// `sharedStage: true` puts every actor of this director on one canvas and one
+// WebGL context. The default keeps a canvas and a context per actor.
 export function createSceneDirector(container, runtimeOptions = {}) {
-    return new SceneDirector(container, canvas => new LivePortraitRuntime(canvas, runtimeOptions));
+    const { sharedStage = false, ...options } = runtimeOptions;
+    const stage = sharedStage ? new StageRenderer(null, { shared: true, container }) : null;
+    return new SceneDirector(container, canvas => new LivePortraitRuntime(canvas, { ...options, stage }), { stage });
 }
 
 export {
@@ -73,12 +79,14 @@ export {
     shouldShowLivePortrait,
 };
 
-const LIBRARY_JSON = '/mmd-dialogue-stage/library.json?v=20261013-all-idol-solo1-v1';
-const MOTION_MAP_JSON = '/mmd-dialogue-stage/gakumas-motion-map.json?v=20261010-story-actions-v1';
+const LIBRARY_JSON = './library.json?v=20261113-hkne-onsen-v1';
+const MOTION_MAP_JSON = './gakumas-motion-map.json?v=20261111-hkne-motions-v1';
+const PRESENTATION_BUFFER_RELEASE_DELAY_MS = 8000;
+const GPU_TEXTURE_RELEASE_DELAY_MS = 20000;
 const STAGE_ASSET_ROOT = new URL('./', import.meta.url);
 const SECONDARY_MOTION_JSON = new URL('gakumas-secondary-motion.json?v=20261002-secondary-motion-v25-kcna-native-skirt', STAGE_ASSET_ROOT).href;
-const SECONDARY_MOTION_MANIFEST = new URL('secondary-motion-manifest.json?v=20261026-hair-contact-v1', STAGE_ASSET_ROOT).href;
-const SECONDARY_PROFILE_VERSION = '20261102-krnh-sleeve-gravity-v1';
+const SECONDARY_MOTION_MANIFEST = new URL('secondary-motion-manifest.json?v=20261113-hkne-onsen-v1', STAGE_ASSET_ROOT).href;
+const SECONDARY_PROFILE_VERSION = '20261109-ssmk-collision-restore-v1';
 const secondaryMotionTables = new Map();
 
 // One worker per actor. Module workers must be same-origin, so when the stage
@@ -93,7 +101,6 @@ function createPhysicsWorker() {
     setTimeout(() => URL.revokeObjectURL(wrapper), 60000);
     return worker;
 }
-const LIBRARY_STATUS = '/mmd-dialogue-stage/library/status?v=20261013-all-idol-solo1-v1';
 const LIVE_PORTRAIT_GLB_SCALE = 12.5;
 const VMD_GLB_BONE_ALIASES = new Map([
     ['センター', 'Center'], ['全ての親', 'Root'], ['上半身', 'UpperBody'], ['上半身2', 'UpperBody2'],
@@ -215,6 +222,79 @@ function resolveVmdBoneName(rawName, bones) {
 let singleton = null;
 const livePicture = { taa: true, aa: 'medium', plateSharpen: true, motionBlur: false };
 const livePictureRuntimes = new Set();
+// Recently presented runtimes, most recent first. Dialogue mostly flips between
+// the same two canvases, so the off-camera one of that pair keeps its render
+// targets, shadow map and textures instead of rebuilding them on every flip.
+// Anything older is still released by the timers below.
+const WARM_PRESENTATION_LIMIT = 2;
+const DEFERRED_RELEASE_DELAY_MS = 1500;
+const PREACTIVATE_TEXTURES_PER_FRAME = 2;
+const DEFAULT_SHARED_TEXTURE_BUDGET_BYTES = 1024 * 1024 * 1024;
+const presentationHistory = [];
+
+function configuredSharedTextureBudgetBytes() {
+    try {
+        const megabytes = Number(globalThis.localStorage?.getItem('gakumas.sharedTextureBudgetMb'));
+        if (Number.isFinite(megabytes) && megabytes >= 128) {
+            return Math.min(8192, megabytes) * 1024 * 1024;
+        }
+    } catch {}
+    return DEFAULT_SHARED_TEXTURE_BUDGET_BYTES;
+}
+
+function sharedTextureBytes(runtime) {
+    if (!runtime?.sharedStage || (runtime.gpuTexturesReleased && !runtime.gpuTextureRestorePending)) return 0;
+    return (Number(runtime.textureBudget?.estimatedBytesAfter) || 0)
+        + estimateImageTextureBytes(runtime.plateTexture?.image);
+}
+
+function scheduleSharedTextureBudgetCheck(stage) {
+    if (!stage?.shared || stage.sharedTextureBudgetTimer) return;
+    // Run after the visibility change settles so a speaker switch never pays
+    // the cost of eviction in its reveal frame.
+    stage.sharedTextureBudgetTimer = setTimeout(() => {
+        stage.sharedTextureBudgetTimer = 0;
+        if (stage.disposed) return;
+        const actors = [...stage.actors].filter(actor => actor.ready && (!actor.gpuTexturesReleased || actor.gpuTextureRestorePending));
+        const budgetBytes = configuredSharedTextureBudgetBytes();
+        let residentBytes = actors.reduce((total, actor) => total + sharedTextureBytes(actor), 0);
+        if (residentBytes <= budgetBytes) return;
+
+        const owners = new Map();
+        for (const actor of actors) {
+            for (const texture of actor.modelGpuTextures()) {
+                owners.set(texture, (owners.get(texture) || 0) + 1);
+            }
+        }
+        const candidates = actors
+            .filter(actor => actor.paused && actor.view?.visible !== true && !actor.preactivatePromise)
+            .sort((a, b) => (a.sharedTextureLastUsed || 0) - (b.sharedTextureLastUsed || 0));
+        for (const actor of candidates) {
+            if (residentBytes <= budgetBytes) break;
+            const textures = actor.modelGpuTextures();
+            // Disposing a shared Texture object would evict it from another
+            // actor's still-resident model too. Leave those models intact.
+            if ([...textures].some(texture => owners.get(texture) > 1)) continue;
+            const releasedBytes = sharedTextureBytes(actor);
+            if (actor.releaseModelGpuTextures()) residentBytes -= releasedBytes;
+        }
+    }, 250);
+}
+
+function isPresentationRetained(runtime) {
+    const index = presentationHistory.indexOf(runtime);
+    return index >= 0 && index < WARM_PRESENTATION_LIMIT;
+}
+
+function touchPresentation(runtime) {
+    const index = presentationHistory.indexOf(runtime);
+    if (index === 0) return;
+    if (index > 0) presentationHistory.splice(index, 1);
+    presentationHistory.unshift(runtime);
+    for (const other of presentationHistory) {
+        if (other !== runtime) other.flushDeferredRelease();
+    }
+}
 
 export function setLivePictureOptions(options = {}) {
     if (typeof options.plateSharpen === 'boolean') livePicture.plateSharpen = options.plateSharpen;
@@ -278,6 +358,14 @@ export class LivePortraitRuntime {
         this.visemeBound = {};
         this.paused = true;
         this.crowdBudget = null;
+        this.gpuTexturesReleased = false;
+        this.gpuTextureRestorePending = false;
+        this.presentationBuffersReleased = false;
+        this.deferredBufferRelease = false;
+        this.deferredTextureRelease = false;
+        this.preactivatePromise = null;
+        this.resumeGeneration = 0;
+        this.sharedTextureLastUsed = 0;
         this.performanceMonitor = {
             enabled: globalThis.__HATSU_PERF_MONITOR_ENABLED === true,
             bucket: createPerformanceBucket(),
@@ -318,11 +406,13 @@ export class LivePortraitRuntime {
         this.additiveFinishedHandler = null;
         this.pendingAdditiveFinish = null;
         this.additiveClipId = '';
+        this.idleAdditiveRequest = null;
         this.basePerformanceFinished = false;
         this.performanceKey = '';
         this.performanceSelection = null;
         this.playGeneration = 0;
         this.frameId = 0;
+        this.presentationReleaseTimer = 0;
         this.clock = new THREE.Clock();
         this.gakumasHeadBone = null;
         this.gakumasHeadRight = new THREE.Vector3(1, 0, 0);
@@ -332,7 +422,7 @@ export class LivePortraitRuntime {
         this.gakumasUniforms = new Set();
         this.hairCoverStage = new HairCoverStage();
         this.facialEffects = new FacialEffectsStage({
-            basePath: '/mmd-dialogue-stage/assets/facial-effects',
+            basePath: './assets/facial-effects',
             idolId: LIVE_PORTRAIT_IDOL_ID,
         });
         this.shadowStrength = GAKUMAS_LOOK.shadow;
@@ -340,10 +430,11 @@ export class LivePortraitRuntime {
         this.outline = { color: '#000000', alpha: 0.82, thickness: 0.004 };
         this.characterCenter = new THREE.Vector3(0, 8, 0);
         this.characterShadowFit = { center: new THREE.Vector3(0, 8, 0), radius: 10 };
-        this.renderer = null;
-        this.outlineEffect = null;
-        this.lookPass = null;
-        this.postPass = null;
+        // The WebGL context and its passes live on the stage; see the getters below.
+        this.stage = null;
+        // On a shared stage: this actor's own post pass, and how it is layered.
+        this.viewPostPass = null;
+        this.view = null;
         this.plateTexture = null;
         this.plateImage = null;
         this.platePan = { x: 0.5, y: 0.5 };
@@ -363,8 +454,15 @@ export class LivePortraitRuntime {
         this.characterShadowLight = null;
         this.ensurePromise = null;
         livePictureRuntimes.add(this);
-        if (canvas) this.setupRenderer(canvas);
+        if (options.stage) this.setupRenderer(options.stage.canvas, options.stage);
+        else if (canvas) this.setupRenderer(canvas);
     }
+
+    get renderer() { return this.stage?.renderer || null; }
+    get postPass() { return this.viewPostPass || this.stage?.postPass || null; }
+    get sharedStage() { return this.stage?.shared ? this.stage : null; }
+    get lookPass() { return this.stage?.lookPass || null; }
+    get outlineEffect() { return this.stage?.outlineEffect || null; }
 
     adoptCanvas(canvas) {
         if (!canvas || this.canvas === canvas) return;
@@ -376,26 +474,15 @@ export class LivePortraitRuntime {
         this.resize();
     }
 
-    setupRenderer(canvas) {
-        this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, stencil: true });
-        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
-        if ('outputColorSpace' in this.renderer && THREE.SRGBColorSpace) this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-        this.renderer.toneMapping = THREE.NoToneMapping;
-        this.renderer.toneMappingExposure = 1;
-        this.renderer.setClearColor(0x000000, 0);
-        this.renderer.shadowMap.enabled = true;
-        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        this.outlineEffect = new OutlineEffect(this.renderer, {
-            defaultThickness: this.outline.thickness,
-            defaultColor: [0, 0, 0],
-            defaultAlpha: this.outline.alpha,
-            defaultKeepAlive: true,
-        });
-        this.lookPass = new GakumasLookPass(this.renderer);
-        this.lookPass.enabled = true;
-        this.postPass = new GakumasPostPass(this.renderer, { keepAlpha: true });
-        this.postPass.enabled = true;
-        this.postPass.setModule('taa', true);
+    setupRenderer(canvas, sharedStage = null) {
+        if (sharedStage) {
+            this.stage = sharedStage;
+            this.canvas = sharedStage.canvas;
+            this.viewPostPass = sharedStage.createPostPass();
+            sharedStage.attach(this);
+        } else {
+            this.stage = new StageRenderer(canvas, { outline: this.outline });
+        }
         this.syncPictureOptions();
         this.scene = new THREE.Scene();
         this.cameraFrameReady = false;
@@ -456,10 +543,6 @@ export class LivePortraitRuntime {
     disposeRenderer() {
         this.setStageScene(null);
         this.stopLoop();
-        this.lookPass?.dispose();
-        this.lookPass = null;
-        this.postPass?.dispose();
-        this.postPass = null;
         this.plateTexture?.dispose();
         this.plateTexture = null;
         this.plateImage = null;
@@ -468,9 +551,18 @@ export class LivePortraitRuntime {
         this.plateMaterial = null;
         this.plateScene = null;
         this.plateCamera = null;
-        this.outlineEffect = null;
-        this.renderer?.dispose();
-        this.renderer = null;
+        const shadow = this.characterShadowLight?.shadow;
+        if (this.sharedStage) {
+            // The stage and its shadow map outlive this actor.
+            if (shadow) shadow.map = null;
+            this.stage.releasePostPass(this.viewPostPass);
+            this.viewPostPass = null;
+            this.stage.detach(this);
+            this.canvas = null;
+        } else {
+            this.stage?.dispose();
+        }
+        this.stage = null;
         this.scene = null;
         this.camera = null;
         this.hemi = null;
@@ -594,6 +686,11 @@ export class LivePortraitRuntime {
         else this.animationMixer = new THREE.AnimationMixer(model);
         await this.bindSecondaryMotion(model);
         await this.loadPhoneProp(idolId);
+        this.textureBudget = await downscaleTextureSources([
+            ...collectSceneTextures(this.scene),
+            ...this.gakumasTextures.map(entry => entry.texture),
+            ...Object.values(this.gakumasFallbacks),
+        ]);
         this.frameVnCamera();
         await this.ensureFamily('idle', { play: true });
         this.ready = Boolean(this.model);
@@ -1156,11 +1253,13 @@ export class LivePortraitRuntime {
             avoidFace: previousSelection?.face,
         });
         if (!item) return false;
-        if (cue.mode !== 'additive' && previousSelection && item.body === previousSelection.body && item.face === previousSelection.face) {
+        const currentSelection = this.performanceSelection;
+        if (cue.mode !== 'additive' && currentSelection
+            && (item.body || '') === currentSelection.body && (item.face || '') === currentSelection.face) {
+            this.performanceKey = key;
             this.holdSamePerformance();
             return true;
         }
-        if (cue.mode !== 'additive') this.clearAdditiveClip();
         const files = motionAssetUrls(item, this.config, this.indexByPack);
         if (cue.mode !== 'file' && this.idolId === 'nasr' && !item.face && item.body) {
             const idle = await this.ensureFamily('idle', { play: !firstFrame, skipFace: true });
@@ -1210,9 +1309,9 @@ export class LivePortraitRuntime {
 
     playAdditiveClip(source, clipId = '') {
         const mixer = this.ensureMixer();
-        // These are head gestures over an independent body+face performance.
+        // Head gestures can layer over independent, paired or file-based bodies.
         // Full-body and facial tracks from a baked VMD must not dilute the base.
-        if (!mixer || !source || !this.performanceKey?.startsWith('mixed:')) return false;
+        if (!mixer || !source || !this.performanceSelection?.body) return false;
         this.clearAdditiveClip();
         this.performanceClips ||= new Map();
         const cacheKey = `${clipId}:head-additive`;
@@ -1286,26 +1385,39 @@ export class LivePortraitRuntime {
         // A repeated cue keeps the held pose. A one-shot nod still ends, but
         // the looping breath must stay, or start if the pose is already held.
         if (this.additiveFinishedHandler) this.clearAdditiveClip();
-        if (!this.basePerformanceFinished || !this.autoIdleAdditiveOnHold || this.additiveAction) return;
+        this.ensureIdleAdditiveOnHold();
+    }
+
+    ensureIdleAdditiveOnHold() {
+        if (this.paused || !this.basePerformanceFinished || !this.autoIdleAdditiveOnHold || this.additiveAction) return;
         this.playRandomIdleAdditiveOnHold(this.playGeneration).catch(error => {
             console.warn('[LivePortrait] idle additive hold failed', error);
         });
     }
 
     async playRandomIdleAdditiveOnHold(generation = this.playGeneration) {
-        if (!this.autoIdleAdditiveOnHold || this.paused || !this.basePerformanceFinished || generation !== this.playGeneration) return false;
-        const candidates = this.idleAdditiveItems();
-        if (!candidates.length) return false;
-        const item = candidates[Math.floor(Math.random() * candidates.length)];
-        const files = motionAssetUrls(item, this.config, this.indexByPack);
-        if (files.length !== 1 || files[0].kind !== 'body' || files[0].guessed) return false;
-        await this.importMotionEntries(files.map(file => ({ ...file, label: item.label, additive: true })));
-        if (this.paused || !this.basePerformanceFinished || generation !== this.playGeneration) return false;
-        const source = this.actions.get(files[0].id)?.clip;
-        return this.playIdleAdditiveClip(source, files[0].id);
+        if (!this.autoIdleAdditiveOnHold || this.paused || !this.basePerformanceFinished || this.additiveAction
+            || generation !== this.playGeneration || this.idleAdditiveRequest?.generation === generation) return false;
+        const request = { generation };
+        this.idleAdditiveRequest = request;
+        try {
+            const candidates = this.idleAdditiveItems();
+            if (!candidates.length) return false;
+            const item = candidates[Math.floor(Math.random() * candidates.length)];
+            const files = motionAssetUrls(item, this.config, this.indexByPack);
+            if (files.length !== 1 || files[0].kind !== 'body' || files[0].guessed) return false;
+            await this.importMotionEntries(files.map(file => ({ ...file, label: item.label, additive: true })));
+            if (this.idleAdditiveRequest !== request || this.paused || this.additiveAction
+                || !this.basePerformanceFinished || generation !== this.playGeneration) return false;
+            const source = this.actions.get(files[0].id)?.clip;
+            return this.playIdleAdditiveClip(source, files[0].id);
+        } finally {
+            if (this.idleAdditiveRequest === request) this.idleAdditiveRequest = null;
+        }
     }
 
     clearAdditiveClip() {
+        this.idleAdditiveRequest = null;
         const mixer = this.model ? this.ensureMixer() : null;
         if (mixer && this.additiveFinishedHandler) mixer.removeEventListener('finished', this.additiveFinishedHandler);
         this.additiveFinishedHandler = null;
@@ -1524,7 +1636,11 @@ export class LivePortraitRuntime {
         if (!clips.length) return false;
         const mixer = this.ensureMixer();
         if (!mixer) return false;
-        this.clearAdditiveClip();
+        // A different face may reuse the already-held body. Keep its looping
+        // breath and phase; a new body or an explicit restart replaces it.
+        const keepBreath = !options.restart && this.additiveAction && !this.additiveFinishedHandler
+            && clips.some(({ clip, kind }) => kind === 'body' && this.liveActions.some(action => action.getClip() === clip));
+        if (!keepBreath) this.clearAdditiveClip();
         this.basePerformanceFinished = false;
         mixer.timeScale = 1;
         const requestedFade = options.fade ?? (this.liveActions.length ? fadeDurationForTransition(fromItem, item) : 0);
@@ -1605,14 +1721,20 @@ export class LivePortraitRuntime {
 
     attachClipFinished(mixer, clips, item, generation) {
         if (!mixer || !clips.length) return;
-        const longest = clips.reduce((left, right) => (right.duration > left.duration ? right : left));
-        const handler = event => {
-            if (this.playGeneration !== generation || event.action.getClip() !== longest) return;
+        const actions = clips.map(clip => mixer.clipAction(clip));
+        // Reused actions can already be clamped at their last frame. They will
+        // not emit another finished event, even if their clip is the longest.
+        const finish = action => {
+            if (this.playGeneration !== generation || actions.some(action => action.enabled && !action.paused)) return;
             this.clearFinishedHandler(mixer);
-            this.pendingFinish = { action: event.action, generation };
+            this.pendingFinish = { action, generation };
+        };
+        const handler = event => {
+            if (actions.includes(event.action)) finish(event.action);
         };
         this.finishedHandler = handler;
         mixer.addEventListener('finished', handler);
+        finish(actions[0]);
     }
 
     flushPendingAnimationFinishes() {
@@ -1634,11 +1756,7 @@ export class LivePortraitRuntime {
         if (!(baseFinished || currentAdditiveFinished) || !this.basePerformanceFinished) return;
         const mixer = this.ensureMixer();
         if (mixer) mixer.timeScale = this.additiveAction ? 1 : 0;
-        if (this.autoIdleAdditiveOnHold && !this.additiveAction) {
-            this.playRandomIdleAdditiveOnHold(this.playGeneration).catch(error => {
-                console.warn('[LivePortrait] idle additive hold failed', error);
-            });
-        }
+        this.ensureIdleAdditiveOnHold();
     }
 
     ensureMixer() {
@@ -1700,12 +1818,23 @@ export class LivePortraitRuntime {
     }
 
     pause() {
+        this.resumeGeneration += 1;
         this.cancelPerformance();
-        this.clearAdditiveClip();
+        this.idleAdditiveRequest = null;
+        if (this.additiveFinishedHandler) this.clearAdditiveClip();
         this.setTalkLevel(0, { active: false });
         this.paused = true;
         this.stopLoop();
-        this.releasePresentationBuffers();
+        // A shared stage owns the canvas, post targets and shadow map for all
+        // actors. Pausing an actor must only stop its simulation; releasing
+        // presentation resources here would make the next speaker allocate
+        // them again in the same frame.
+        if (!this.sharedStage) this.releasePresentationBuffers();
+        else {
+            this.presentationBuffersReleased = false;
+            scheduleSharedTextureBudgetCheck(this.sharedStage);
+        }
+        this.stage?.invalidate?.();
     }
 
     setCrowdBudget({ count = 1, focused = true } = {}) {
@@ -1713,6 +1842,7 @@ export class LivePortraitRuntime {
             count,
             focused,
             devicePixelRatio: globalThis.devicePixelRatio || 1,
+            shared: Boolean(this.sharedStage),
         });
         if (!this.paused) this.applyCrowdRendering();
     }
@@ -1720,7 +1850,7 @@ export class LivePortraitRuntime {
     setPerformanceMonitoring(enabled = true) {
         this.performanceMonitor.enabled = Boolean(enabled);
         this.performanceMonitor.bucket = createPerformanceBucket();
-        if (this.renderer?.info) {
+        if (this.renderer?.info && !this.sharedStage) {
             this.renderer.info.autoReset = !this.performanceMonitor.enabled;
             if (this.performanceMonitor.enabled) this.renderer.info.reset();
         }
@@ -1732,12 +1862,14 @@ export class LivePortraitRuntime {
             monitor.model = this.model;
             monitor.modelStats = collectModelComplexity(this.model);
         }
-        const render = this.renderer?.info?.render || {};
-        const memory = this.renderer?.info?.memory || {};
+        // Shared actors use one renderer, so its counters belong to the stage
+        // aggregate and must not be repeated on every actor row.
+        const render = this.sharedStage ? {} : this.renderer?.info?.render || {};
+        const memory = this.sharedStage ? {} : this.renderer?.info?.memory || {};
         const budget = this.crowdBudget || portraitCrowdBudget({ devicePixelRatio: globalThis.devicePixelRatio || 1 });
         return {
-            idolId: String(meta.idolId || this.canvas?.dataset?.idol || ''),
-            costume: String(meta.costume || this.canvas?.dataset?.costume || ''),
+            idolId: String(meta.idolId || this.idolId || ''),
+            costume: String(meta.costume || ''),
             present: meta.present === true,
             ready: Boolean(this.ready),
             paused: Boolean(this.paused),
@@ -1751,9 +1883,13 @@ export class LivePortraitRuntime {
                 lines: Number(render.lines) || 0,
                 geometries: Number(memory.geometries) || 0,
                 textures: Number(memory.textures) || 0,
-                pixelRatio: Number(this.renderer?.getPixelRatio?.()) || 0,
-                width: Number(this.renderer?.domElement?.width) || 0,
-                height: Number(this.renderer?.domElement?.height) || 0,
+                pixelRatio: this.sharedStage ? 0 : Number(this.renderer?.getPixelRatio?.()) || 0,
+                width: this.sharedStage ? 0 : Number(this.renderer?.domElement?.width) || 0,
+                height: this.sharedStage ? 0 : Number(this.renderer?.domElement?.height) || 0,
+            },
+            textureBudget: {
+                model: this.textureBudget || null,
+                scene: this.stageScene?.textureBudget || null,
             },
             budget: {
                 pixelRatio: Number(budget.pixelRatio) || 0,
@@ -1777,6 +1913,29 @@ export class LivePortraitRuntime {
         };
     }
 
+    getResourceSnapshot(meta = {}) {
+        return {
+            label: meta.label || this.idolId || '偶像渲染器',
+            kind: meta.kind || '角色',
+            present: meta.present === true,
+            memory: estimateRendererResources({
+                // In shared mode the stage row owns the one canvas, target
+                // pool, scene texture estimate and shared shadow maps. This
+                // row accounts only this actor's model, plate and geometry.
+                renderer: this.sharedStage ? null : this.renderer,
+                roots: [this.scene],
+                postPass: this.sharedStage ? null : this.postPass,
+                lookPass: this.sharedStage ? null : this.lookPass,
+                modelTextureBytes: this.gpuTexturesReleased && !this.gpuTextureRestorePending ? 0 : this.textureBudget?.estimatedBytesAfter || 0,
+                sceneTextureBytes: this.sharedStage ? 0 : Number(meta.sceneTextureBytes) || this.stageScene?.textureBudget?.estimatedBytesAfter || 0,
+                plateTextureBytes: this.gpuTexturesReleased && !this.gpuTextureRestorePending ? 0 : estimateImageTextureBytes(this.plateTexture?.image),
+                includeCanvas: !this.sharedStage,
+                includeRendererCounts: !this.sharedStage,
+                three: THREE,
+            }),
+        };
+    }
+
     recordPerformanceFrame(sample) {
         if (!this.performanceMonitor.enabled) return;
         recordPerformanceSample(this.performanceMonitor.bucket, sample);
@@ -1784,7 +1943,8 @@ export class LivePortraitRuntime {
 
     applyCrowdRendering() {
         const budget = this.crowdBudget || portraitCrowdBudget({ devicePixelRatio: globalThis.devicePixelRatio || 1 });
-        if (this.renderer && this.renderer.getPixelRatio() !== budget.pixelRatio) {
+        // A shared canvas has one pixel ratio for everyone; the stage sets it.
+        if (this.renderer && !this.sharedStage && this.renderer.getPixelRatio() !== budget.pixelRatio) {
             this.renderer.setPixelRatio(budget.pixelRatio);
             if (this.canvas) this.canvas.width = 0;
             this.resize();
@@ -1797,7 +1957,9 @@ export class LivePortraitRuntime {
     syncPictureOptions({ render = false } = {}) {
         const budget = this.crowdBudget || portraitCrowdBudget({ devicePixelRatio: globalThis.devicePixelRatio || 1 });
         const level = aaLevel(livePicture.aa);
-        const allow = budget.taa !== false;
+        // The render scale follows TAA. Views that share scratch targets must
+        // agree on it, or every actor would resize them for its own frame.
+        const allow = this.sharedStage ? true : budget.taa !== false;
         this.postPass?.setQuality({
             taa: allow && level.taa,
             fxaa: allow && level.fxaa,
@@ -1810,28 +1972,123 @@ export class LivePortraitRuntime {
 
     releasePresentationBuffers() {
         const shadow = this.characterShadowLight?.shadow;
+        if (this.sharedStage) {
+            // Shared-stage presentation resources are global and intentionally
+            // retained across speaker changes.  Keeping each view's history
+            // also avoids a TAA reallocation when it becomes visible again.
+            this.presentationBuffersReleased = false;
+            return;
+        }
         if (shadow?.map) {
             shadow.map.dispose();
             shadow.map = null;
         }
+        this.presentationBuffersReleased = true;
         if (!this.renderer) return;
         this.renderer.setSize(1, 1, false);
         this.postPass?.setSize(1, 1);
         this.lookPass?.setSize(1, 1);
     }
 
+    getRetainedResourceTargets() {
+        const targets = collectPostTargets(this.postPass, this.lookPass);
+        if (this.characterShadowLight?.shadow?.map?.isWebGLRenderTarget) targets.add(this.characterShadowLight.shadow.map);
+        return targets;
+    }
+
+    modelGpuTextures() {
+        const textures = collectSceneTextures(this.model);
+        this.gakumasTextures.forEach(entry => { if (entry.texture?.isTexture) textures.add(entry.texture); });
+        Object.values(this.gakumasFallbacks).forEach(texture => { if (texture?.isTexture) textures.add(texture); });
+        if (this.plateTexture?.isTexture) textures.add(this.plateTexture);
+        return textures;
+    }
+
+    releaseModelGpuTextures({ protectedTextures = null } = {}) {
+        const textures = this.modelGpuTextures();
+        // A shared renderer can have the same Texture object bound by more
+        // than one actor. Never dispose it while another resident actor uses
+        // it; SceneDirector also avoids evicting models with shared textures.
+        if (protectedTextures && [...textures].some(texture => protectedTextures.has(texture))) return false;
+        textures.forEach(texture => texture.dispose());
+        this.gpuTexturesReleased = true;
+        this.gpuTextureRestorePending = false;
+        return true;
+    }
+
+    clearPresentationRelease() {
+        clearTimeout(this.presentationReleaseTimer);
+        this.presentationReleaseTimer = 0;
+        clearTimeout(this.gpuTextureReleaseTimer);
+        this.gpuTextureReleaseTimer = 0;
+        this.deferredBufferRelease = false;
+        this.deferredTextureRelease = false;
+    }
+
+    // A runtime inside the warm window keeps its allocations when a timer
+    // fires; the release is remembered and runs once it drops out of the window.
+    scheduleBufferRelease(delay = PRESENTATION_BUFFER_RELEASE_DELAY_MS) {
+        if (this.sharedStage) return;
+        clearTimeout(this.presentationReleaseTimer);
+        this.deferredBufferRelease = false;
+        this.presentationReleaseTimer = setTimeout(() => {
+            this.presentationReleaseTimer = 0;
+            if (!this.paused) return;
+            if (isPresentationRetained(this)) this.deferredBufferRelease = true;
+            else this.releasePresentationBuffers();
+        }, delay);
+    }
+
+    scheduleTextureRelease(delay = GPU_TEXTURE_RELEASE_DELAY_MS) {
+        if (this.sharedStage) return;
+        clearTimeout(this.gpuTextureReleaseTimer);
+        this.deferredTextureRelease = false;
+        this.gpuTextureReleaseTimer = setTimeout(() => {
+            this.gpuTextureReleaseTimer = 0;
+            if (!this.paused) return;
+            if (isPresentationRetained(this)) this.deferredTextureRelease = true;
+            else this.releaseModelGpuTextures();
+        }, delay);
+    }
+
+    flushDeferredRelease() {
+        if (this.sharedStage) return;
+        if (!this.paused || isPresentationRetained(this)) return;
+        // Not on the frame that reveals another actor: that frame is the one
+        // this whole policy is trying to keep short.
+        if (this.deferredBufferRelease) this.scheduleBufferRelease(DEFERRED_RELEASE_DELAY_MS);
+        if (this.deferredTextureRelease) this.scheduleTextureRelease(DEFERRED_RELEASE_DELAY_MS * 2);
+    }
+
     setPresentationActive(active) {
-        // Hide the draw loop without disposing the context, compiled shaders,
-        // textures, or the posed skeleton. Preload stays warm for the next cut.
+        // Keep the renderer and pose warm briefly, then release large GPU allocations.
         if (active) {
+            this.clearPresentationRelease();
+            // A shared-stage texture eviction is cleared only after every
+            // texture has been restored through renderer.initTexture().
+            if (!this.sharedStage) this.gpuTexturesReleased = false;
+            else this.sharedTextureLastUsed = (this.sharedStage.sharedTextureClock = (this.sharedStage.sharedTextureClock || 0) + 1);
+            touchPresentation(this);
             this.resume();
             if (!this.paused) this.renderFrame();
             return;
         }
-        if (this.paused) return;
-        this.paused = true;
-        this.stopLoop();
-        this.releasePresentationBuffers();
+        this.resumeGeneration += 1;
+        this.idleAdditiveRequest = null;
+        if (!this.paused) {
+            this.paused = true;
+            this.stopLoop();
+            this.stage?.invalidate?.();
+        }
+        if (this.sharedStage) {
+            // Shared actors remain GPU-resident.  The stage simply omits this
+            // paused view from composition until it is activated again.
+            this.presentationBuffersReleased = false;
+            scheduleSharedTextureBudgetCheck(this.sharedStage);
+            return;
+        }
+        this.scheduleBufferRelease();
+        this.scheduleTextureRelease();
     }
 
     settleInactiveActions() {
@@ -1845,7 +2102,19 @@ export class LivePortraitRuntime {
 
     resume() {
         if (!this.ready) return;
+        if (this.sharedStage && this.gpuTexturesReleased) {
+            const generation = ++this.resumeGeneration;
+            this.preactivate({ isCurrent: () => generation === this.resumeGeneration })
+                .then(restored => {
+                    if (restored && generation === this.resumeGeneration) this.resume();
+                })
+                .catch(error => console.warn('[LivePortrait] shared texture restore failed', error));
+            return;
+        }
+        this.resumeGeneration += 1;
         this.paused = false;
+        this.presentationBuffersReleased = false;
+        this.ensureIdleAdditiveOnHold();
         this.clock.getDelta();
         this.applyCrowdRendering();
         this.startLoop();
@@ -1859,6 +2128,25 @@ export class LivePortraitRuntime {
     async prewarm({ frames = 2 } = {}) {
         if (!this.ready || !this.canvas) return false;
         if (this.prewarmPromise) return this.prewarmPromise;
+        if (this.sharedStage) {
+            // No canvas of its own to hide: draw off the shared canvas instead.
+            this.prewarmPromise = (async () => {
+                const count = Math.max(1, Number(frames) || 1);
+                for (let index = 0; index < count; index++) {
+                    if (!this.sharedStage || !this.ready) return false;
+                    if (this.paused) {
+                        this.applyCrowdRendering();
+                        if (!this.cameraFrameReady) this.frameVnCamera();
+                        this.sharedStage.drawHidden(() => this.renderFrame());
+                    }
+                    await new Promise(resolve => requestAnimationFrame(resolve));
+                }
+                return true;
+            })().finally(() => {
+                this.prewarmPromise = null;
+            });
+            return this.prewarmPromise;
+        }
         this.prewarmPromise = (async () => {
             const wasPaused = this.paused;
             const wasHidden = this.canvas.hidden;
@@ -1881,7 +2169,110 @@ export class LivePortraitRuntime {
         return this.prewarmPromise;
     }
 
+    // Rebuild what the release timers freed while this actor is still off
+    // camera: a couple of texture uploads per frame, then the render targets,
+    // then one hidden frame. The Beat flip that reveals the actor then finds
+    // everything allocated instead of paying for all of it in one frame.
+    async preactivate({ count = 1, focused = true, isCurrent = () => true } = {}) {
+        if (this.sharedStage) {
+            if (!this.ready || !this.renderer || !this.paused) return !this.gpuTexturesReleased;
+            if (!this.gpuTexturesReleased) return true;
+            if (this.preactivatePromise) {
+                const pending = this.preactivatePromise;
+                return pending.then(restored => restored || !isCurrent()
+                    ? Boolean(restored)
+                    : this.preactivate({ isCurrent }));
+            }
+            const idle = () => this.ready && this.paused && Boolean(this.renderer) && isCurrent();
+            const nextFrame = () => new Promise(resolve => requestAnimationFrame(resolve));
+            this.preactivatePromise = (async () => {
+                const textures = [...this.modelGpuTextures()].filter(texture => texture.image);
+                this.gpuTextureRestorePending = true;
+                for (let index = 0; index < textures.length; index += PREACTIVATE_TEXTURES_PER_FRAME) {
+                    if (!idle()) return false;
+                    for (const texture of textures.slice(index, index + PREACTIVATE_TEXTURES_PER_FRAME)) {
+                        this.renderer.initTexture(texture);
+                    }
+                    if (index + PREACTIVATE_TEXTURES_PER_FRAME < textures.length) await nextFrame();
+                }
+                if (!idle()) return false;
+                // Keep the released flag set until the full upload batch has
+                // completed; a cancelled batch will safely retry next time.
+                this.gpuTexturesReleased = false;
+                this.gpuTextureRestorePending = false;
+                return true;
+            })().finally(() => {
+                this.preactivatePromise = null;
+            });
+            return this.preactivatePromise;
+        }
+        if (!this.ready || !this.canvas || !this.renderer || !this.paused) return false;
+        if (this.preactivatePromise) return this.preactivatePromise;
+        const idle = () => this.ready && this.paused && Boolean(this.renderer) && isCurrent();
+        const nextFrame = () => new Promise(resolve => requestAnimationFrame(resolve));
+        this.preactivatePromise = (async () => {
+            touchPresentation(this);
+            if (!this.gpuTexturesReleased && !this.presentationBuffersReleased) return true;
+            this.clearPresentationRelease();
+            try {
+                await nextFrame();
+                if (this.gpuTexturesReleased) {
+                    const textures = [...this.modelGpuTextures()].filter(texture => texture.image);
+                    this.gpuTextureRestorePending = true;
+                    for (let index = 0; index < textures.length; index += PREACTIVATE_TEXTURES_PER_FRAME) {
+                        if (!idle()) return false;
+                        for (const texture of textures.slice(index, index + PREACTIVATE_TEXTURES_PER_FRAME)) {
+                            this.renderer.initTexture(texture);
+                        }
+                        await nextFrame();
+                    }
+                    if (!idle()) return false;
+                    this.gpuTexturesReleased = false;
+                    this.gpuTextureRestorePending = false;
+                }
+                if (!idle()) return false;
+                if (this.presentationBuffersReleased && this.sharedStage) {
+                    this.setCrowdBudget({ count, focused });
+                    this.applyCrowdRendering();
+                    this.sharedStage.drawHidden(() => this.renderFrame());
+                    this.presentationBuffersReleased = false;
+                } else if (this.presentationBuffersReleased) {
+                    // Size the buffers for the budget the actor will be shown
+                    // with; the director applies the same one on the flip.
+                    this.setCrowdBudget({ count, focused });
+                    this.applyCrowdRendering();
+                    this.resize();
+                    const size = this.renderer.getSize(new THREE.Vector2());
+                    this.postPass?.setSize(size.x, size.y);
+                    this.lookPass?.setSize(size.x, size.y);
+                    // Three allocates a render target on first bind.
+                    const bound = this.renderer.getRenderTarget();
+                    for (const target of collectPostTargets(this.postPass, this.lookPass)) this.renderer.setRenderTarget(target);
+                    this.renderer.setRenderTarget(bound);
+                    await nextFrame();
+                    if (!idle()) return false;
+                    this.renderFrame();
+                    this.presentationBuffersReleased = false;
+                }
+                return true;
+            } finally {
+                if (this.paused && this.renderer) {
+                    this.scheduleBufferRelease();
+                    this.scheduleTextureRelease();
+                }
+            }
+        })().finally(() => {
+            this.preactivatePromise = null;
+        });
+        return this.preactivatePromise;
+    }
+
     startLoop() {
+        // A shared stage runs the one loop and calls runFrame() on its actors.
+        if (this.sharedStage) {
+            this.sharedStage.startLoop();
+            return;
+        }
         if (this.frameId) return;
         const tick = () => {
             if (this.paused) {
@@ -1889,80 +2280,92 @@ export class LivePortraitRuntime {
                 return;
             }
             this.frameId = requestAnimationFrame(tick);
-            const monitor = this.performanceMonitor.enabled;
-            const frameStarted = monitor ? globalThis.performance.now() : 0;
-            const delta = Math.min(this.clock.getDelta(), 0.05);
-            const stride = this.crowdBudget?.drawStride || 1;
-            const updateStride = this.crowdBudget?.updateStride || 1;
-            this.crowdSerial = (this.crowdSerial + 1) >>> 0;
-            const drawThisFrame = stride <= 1 || this.crowdSerial % stride === 1;
-            const updateThisFrame = updateStride <= 1 || this.crowdSerial % updateStride === 1;
-            this.physicsDebt = Math.min(0.1, (this.physicsDebt || 0) + delta);
-            // Background actors in a group draw every other frame. Skipping the
-            // skeleton update keeps physics from sampling a half-applied pose.
-            if (!drawThisFrame) {
-                this.recordPerformanceFrame({ now: monitor ? globalThis.performance.now() : 0, skipped: true });
-                return;
-            }
-            // Background actors keep their last animated pose on some draw
-            // frames. This avoids paying for full skeleton and secondary-motion
-            // simulation for every off-focus idol while the speaker stays fluid.
-            if (!updateThisFrame) {
-                const renderStarted = monitor ? globalThis.performance.now() : 0;
-                this.renderFrame();
-                const now = monitor ? globalThis.performance.now() : 0;
-                this.recordPerformanceFrame({ now, totalMs: monitor ? now - frameStarted : 0, updateMs: 0, renderMs: monitor ? now - renderStarted : 0, skipped: true });
-                return;
-            }
-            const step = Math.min(this.physicsDebt, 0.05);
-            this.physicsDebt = 0;
-            const updateStarted = monitor ? globalThis.performance.now() : 0;
-            const phases = {};
-            if (this.model) {
-                const animationStarted = monitor ? globalThis.performance.now() : 0;
-                if (this.physicsProxy?.ready) this.physicsProxy.restoreBeforeAnimation();
-                else this.secondaryMotion?.restoreBeforeAnimation?.();
-                if (this.talkTakeoverActive) {
-                    this.restoreTalkBaseMouth();
-                    this.talkBasePreparedForFrame = true;
-                }
-                if (this.modelFormat === 'glb') this.animationMixer?.update(step);
-                else this.helper.update(step);
-                this.flushPendingAnimationFinishes();
-                // Keep root-motion sampling current without walking every bone
-                // and mesh. SecondaryMotion refreshes the individual spring
-                // paths it reads, while the renderer handles the full tree.
-                this.model.updateWorldMatrix?.(true, false);
-                if (monitor) phases.animationMs = globalThis.performance.now() - animationStarted;
-                const secondaryStarted = monitor ? globalThis.performance.now() : 0;
-                if (this.secondaryMotionBound) {
-                    const backgroundPhysics = updateStride > 1;
-                    const physicsOptions = backgroundPhysics
-                        ? { maxFixedSteps: 1, dropRemainder: true }
-                        : undefined;
-                    // With a worker the solve happens off-thread; this only
-                    // posts the pose and applies the newest finished result.
-                    if (!this.physicsProxy?.update(step, physicsOptions)) {
-                        this.secondaryMotion.update(step, physicsOptions);
-                    }
-                }
-                if (monitor) phases.secondaryMotionMs = globalThis.performance.now() - secondaryStarted;
-                const facialStarted = monitor ? globalThis.performance.now() : 0;
-                this.facialEffects.update();
-                if (monitor) phases.facialMs = globalThis.performance.now() - facialStarted;
-                const attentionStarted = monitor ? globalThis.performance.now() : 0;
-                this.updateAttention(step);
-                this.updateTalkingMorph(step);
-                this.harvestFades();
-                if (monitor) phases.attentionMs = globalThis.performance.now() - attentionStarted;
-            }
-            const updateMs = monitor ? globalThis.performance.now() - updateStarted : 0;
+            this.runFrame();
+        };
+        this.frameId = requestAnimationFrame(tick);
+    }
+
+    // One animation frame of this actor: advance, then draw.
+    runFrame() {
+        const monitor = this.performanceMonitor.enabled;
+        const frameStarted = monitor ? globalThis.performance.now() : 0;
+        const delta = Math.min(this.clock.getDelta(), 0.05);
+        // Skipping a draw would drop this actor from the composed frame.
+        const stride = this.sharedStage ? 1 : this.crowdBudget?.drawStride || 1;
+        const updateStride = this.crowdBudget?.updateStride || 1;
+        this.crowdSerial = (this.crowdSerial + 1) >>> 0;
+        const drawThisFrame = stride <= 1 || this.crowdSerial % stride === 1;
+        const updateThisFrame = updateStride <= 1 || this.crowdSerial % updateStride === 1;
+        this.physicsDebt = Math.min(0.1, (this.physicsDebt || 0) + delta);
+        // Background actors in a group draw every other frame. Skipping the
+        // skeleton update keeps physics from sampling a half-applied pose.
+        if (!drawThisFrame) {
+            this.recordPerformanceFrame({ now: monitor ? globalThis.performance.now() : 0, skipped: true });
+            return;
+        }
+        // Background actors keep their last animated pose on some draw
+        // frames. This avoids paying for full skeleton and secondary-motion
+        // simulation for every off-focus idol while the speaker stays fluid.
+        if (!updateThisFrame) {
             const renderStarted = monitor ? globalThis.performance.now() : 0;
             this.renderFrame();
             const now = monitor ? globalThis.performance.now() : 0;
-            this.recordPerformanceFrame({ now, totalMs: monitor ? now - frameStarted : 0, updateMs, renderMs: monitor ? now - renderStarted : 0, phases });
-        };
-        this.frameId = requestAnimationFrame(tick);
+            this.recordPerformanceFrame({ now, totalMs: monitor ? now - frameStarted : 0, updateMs: 0, renderMs: monitor ? now - renderStarted : 0, skipped: true });
+            return;
+        }
+        const step = Math.min(this.physicsDebt, 0.05);
+        this.physicsDebt = 0;
+        const updateStarted = monitor ? globalThis.performance.now() : 0;
+        const phases = {};
+        this.updateFrame(step, { background: updateStride > 1, monitor, phases });
+        const updateMs = monitor ? globalThis.performance.now() - updateStarted : 0;
+        const renderStarted = monitor ? globalThis.performance.now() : 0;
+        this.renderFrame();
+        const now = monitor ? globalThis.performance.now() : 0;
+        this.recordPerformanceFrame({ now, totalMs: monitor ? now - frameStarted : 0, updateMs, renderMs: monitor ? now - renderStarted : 0, phases });
+    }
+
+    // Advance animation, secondary motion and facial state by `step` seconds.
+    // Drawing is separate so a shared stage can update every actor first and
+    // then compose the visible ones into one frame.
+    updateFrame(step, { background = false, monitor = false, phases = {} } = {}) {
+        if (!this.model) return;
+        const animationStarted = monitor ? globalThis.performance.now() : 0;
+        if (this.physicsProxy?.ready) this.physicsProxy.restoreBeforeAnimation();
+        else this.secondaryMotion?.restoreBeforeAnimation?.();
+        if (this.talkTakeoverActive) {
+            this.restoreTalkBaseMouth();
+            this.talkBasePreparedForFrame = true;
+        }
+        if (this.modelFormat === 'glb') this.animationMixer?.update(step);
+        else this.helper.update(step);
+        this.flushPendingAnimationFinishes();
+        // Keep root-motion sampling current without walking every bone
+        // and mesh. SecondaryMotion refreshes the individual spring
+        // paths it reads, while the renderer handles the full tree.
+        this.model.updateWorldMatrix?.(true, false);
+        if (monitor) phases.animationMs = globalThis.performance.now() - animationStarted;
+        const secondaryStarted = monitor ? globalThis.performance.now() : 0;
+        if (this.secondaryMotionBound) {
+            const backgroundPhysics = background;
+            const physicsOptions = backgroundPhysics
+                ? { maxFixedSteps: 1, dropRemainder: true }
+                : undefined;
+            // With a worker the solve happens off-thread; this only
+            // posts the pose and applies the newest finished result.
+            if (!this.physicsProxy?.update(step, physicsOptions)) {
+                this.secondaryMotion.update(step, physicsOptions);
+            }
+        }
+        if (monitor) phases.secondaryMotionMs = globalThis.performance.now() - secondaryStarted;
+        const facialStarted = monitor ? globalThis.performance.now() : 0;
+        this.facialEffects.update();
+        if (monitor) phases.facialMs = globalThis.performance.now() - facialStarted;
+        const attentionStarted = monitor ? globalThis.performance.now() : 0;
+        this.updateAttention(step);
+        this.updateTalkingMorph(step);
+        this.harvestFades();
+        if (monitor) phases.attentionMs = globalThis.performance.now() - attentionStarted;
     }
 
     sampledTaaMotion() {
@@ -2001,8 +2404,21 @@ export class LivePortraitRuntime {
     }
 
     renderFrame() {
+        const shared = this.sharedStage;
+        if (shared && !shared.composing) {
+            // Outside the stage's own pass over its layers, a draw request means
+            // "show my current state": recompose if this actor is on camera,
+            // otherwise run the draw off the canvas.
+            if (shared.isVisible(this)) shared.invalidate();
+            else shared.drawHidden(() => this.renderFrame());
+            return;
+        }
+        if (shared) {
+            const budget = this.crowdBudget || portraitCrowdBudget({ devicePixelRatio: globalThis.devicePixelRatio || 1 });
+            shared.outlineEffect.enabled = budget.outline;
+        }
         this.resize();
-        if (this.performanceMonitor.enabled && this.renderer?.info) {
+        if (this.performanceMonitor.enabled && this.renderer?.info && !shared) {
             // Three resets renderer.info after each renderer.render() by
             // default. A portrait frame contains several passes, so keep one
             // accumulator for the whole frame while diagnostics are enabled.
@@ -2059,8 +2475,7 @@ export class LivePortraitRuntime {
     setStageScene(stage, shot = 'medium', position = 'center', cameraOptions = {}) {
         const previous = this.stageScene;
         if (previous && previous !== stage) {
-            previous.scene.add(previous.root);
-            if (previous.sky) previous.scene.add(previous.sky);
+            previous.attachTo();
         }
         this.stageScene = stage || null;
         if (this.stageCameraAnimation) cancelAnimationFrame(this.stageCameraAnimation);
@@ -2085,8 +2500,7 @@ export class LivePortraitRuntime {
         this.setStagePlate(null);
         this.setShotFrame({ scale: 1, shiftX: 0, originY: .5 });
         stage.applyBeatLayout(shot, position, cameraOptions);
-        this.scene.add(stage.root);
-        if (stage.sky) this.scene.add(stage.sky);
+        stage.attachTo(this.scene);
         const duration = Number(cameraOptions?.duration) > 0 ? Number(cameraOptions.duration) * 1000 : 0;
         const applyCamera = progress => {
             const view = stage.cameraView(stage.layoutId, this.sceneModelFrame, progress);
@@ -2140,6 +2554,13 @@ export class LivePortraitRuntime {
             if (changed && this.postPass) this.postPass.resetHistory = true;
             return;
         }
+        // Three r152 keeps the first image's immutable storage size. Reusing
+        // the texture for a different-sized background draws the new plate
+        // into the top-left corner over the old one, so replace it instead.
+        if (this.plateTexture && this.plateTexture.image !== next) {
+            this.plateTexture.dispose();
+            this.plateTexture = null;
+        }
         if (!this.plateTexture) {
             this.plateTexture = new THREE.Texture(next);
             this.plateTexture.colorSpace = THREE.SRGBColorSpace;
@@ -2147,9 +2568,6 @@ export class LivePortraitRuntime {
             this.plateTexture.generateMipmaps = false;
             this.plateTexture.minFilter = THREE.LinearFilter;
             this.plateTexture.magFilter = THREE.LinearFilter;
-            this.plateTexture.needsUpdate = true;
-        } else if (this.plateTexture.image !== next) {
-            this.plateTexture.image = next;
             this.plateTexture.needsUpdate = true;
         }
         if (this.plateMaterial) this.plateMaterial.uniforms.gkPlate.value = this.plateTexture;
@@ -2229,20 +2647,49 @@ export class LivePortraitRuntime {
             this.camera,
             this.gakumasPasses.hairCover,
         );
+        // Shared-stage accumulation keeps each actor's camera/TAA resolve
+        // intact, then blends the premultiplied result into the stage target.
+        // Scene grade and global effects are deferred until the stage has all
+        // layers; this branch must run before the normal direct presentation
+        // paths below (including the HDR fast path).
+        if (this.sharedStage?.accumulating && this.postPass?.active) {
+            const draw = () => {
+                if (this.stageScene) return this.stageScene.withPostProcessing(this.postPass, drawCharacter);
+                if (this.outlineEffect) this.outlineEffect.autoClear = true;
+                drawCharacter();
+            };
+            const source = this.postPass.render(draw, this.camera, {
+                present: false,
+                composite: false,
+                velocityRoot: this.scene,
+            });
+            this.sharedStage.accumulateTexture(source);
+            return;
+        }
         if (this.stageScene && this.postPass?.active && this.lookPass?.enabled) {
             if (this.outlineEffect) this.outlineEffect.autoClear = true;
-            const source = this.postPass.render(drawCharacter, this.camera, { present: false, velocityRoot: this.scene });
+            const draw = () => this.stageScene.withPostProcessing(this.postPass, drawCharacter);
+            if (this.postPass.usesSceneHDR) {
+                // Scene and actor share one final scene grade, without a second
+                // LookPass bloom/colour filter over the already graded frame.
+                this.postPass.render(draw, this.camera, { velocityRoot: this.scene });
+                return;
+            }
+            const source = this.postPass.render(draw, this.camera, { present: false, velocityRoot: this.scene });
             this.lookPass.presentTexture(source);
             return;
         }
-        if (this.plateTexture && this.postPass?.active && this.lookPass?.enabled) {
+        if ((this.plateTexture || this.sharedStage) && this.postPass?.active && this.lookPass?.enabled) {
             const draw = () => {
-                const drewPlate = this.drawStagePlate();
+                // Shared stages draw a flat background once before the actor
+                // layers. Drawing this actor's plate again would darken or
+                // duplicate it for every visible idol.
+                const drewPlate = this.sharedStage ? false : this.drawStagePlate();
                 if (this.outlineEffect) this.outlineEffect.autoClear = !drewPlate;
                 drawCharacter();
             };
-            const source = this.postPass.render(draw, this.camera, { present: false, velocityRoot: this.scene });
-            this.lookPass.presentTexture(source, { texture: this.plateTexture, cover: this.plateCover });
+            const source = this.postPass.render(draw, this.camera, { present: false, composite: false, velocityRoot: this.scene });
+            this.lookPass.presentTexture(source, this.sharedStage ? null : { texture: this.plateTexture, cover: this.plateCover });
             return;
         }
         if (this.outlineEffect) this.outlineEffect.autoClear = true;
@@ -2311,12 +2758,22 @@ export class LivePortraitRuntime {
 
     resize() {
         if (!this.canvas || !this.renderer || !this.camera) return;
+        // StageRenderer.drawHidden() temporarily shrinks the shared renderer
+        // to a 4x4 framebuffer for shader/resource prewarming. The canvas CSS
+        // size is still the visible stage size, so normal resize logic would
+        // immediately grow all post targets again. Keep the tiny hidden size
+        // until drawHidden() restores the renderer.
+        if (this.sharedStage?.hiddenRendering) return;
         const width = this.canvas.clientWidth || this.canvas.parentElement?.clientWidth || 0;
         const height = this.canvas.clientHeight || this.canvas.parentElement?.clientHeight || 0;
         if (!width || !height) return;
         const pixelRatio = this.renderer.getPixelRatio();
         if (this.canvas.width !== Math.floor(width * pixelRatio) || this.canvas.height !== Math.floor(height * pixelRatio)) {
             this.renderer.setSize(width, height, false);
+            this.camera.aspect = width / height;
+            this.camera.updateProjectionMatrix();
+        } else if (this.sharedStage && this.camera.aspect !== width / height) {
+            // Another actor already resized the shared canvas.
             this.camera.aspect = width / height;
             this.camera.updateProjectionMatrix();
         }
@@ -2673,6 +3130,7 @@ export class LivePortraitRuntime {
         if (axis) this.gakumasHeadRight.setFromMatrixColumn(axis.matrixWorld, 0).normalize();
         const shadowLight = this.characterShadowLight;
         const characterShadow = placeCharacterShadowLight(shadowLight, this.camera, this.characterShadowFit, this.crowdShadowMap || this.crowdBudget?.shadowMap || 4096);
+        this.sharedStage?.bindShadowMap(shadowLight);
         const roomSample = actorEnvironmentSample(this.stageScene, actorScenePoint(this.model, this.stageScene));
         this.gakumasUniforms.forEach(uniforms => {
             uniforms.gkLightDirection.value.copy(direction);
@@ -2720,6 +3178,9 @@ export class LivePortraitRuntime {
 
     dispose() {
         livePictureRuntimes.delete(this);
+        const historyIndex = presentationHistory.indexOf(this);
+        if (historyIndex >= 0) presentationHistory.splice(historyIndex, 1);
+        this.clearPresentationRelease();
         this.pause();
         this.physicsProxy?.dispose();
         this.physicsProxy = null;

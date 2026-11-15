@@ -31,11 +31,12 @@ test('actors with dedicated kime keep their own paired motion and face',()=>{
  }
 });
 
-test('all 14 idols can prepare advertised paired cues without borrowing another idol motion',()=>{
+test('all registered idols can prepare advertised paired cues without borrowing another idol motion',()=>{
  const names=Object.fromEntries(Object.entries(SCENE_IDOLS).filter(([,id])=>id!=='nasr').map(([name,id])=>[id,name]));
  const cuesById=Object.fromEntries(Object.entries(names).map(([id,name])=>[id,BEAT_PAIRED_CUE_IDS.map(cue=>`${name}(${resolveBeatCueAlias(cue)})`)]));
  const plan=buildDialogueAssetPlan({beats:[],slides:[]},{cast:Object.keys(names),cuesById,costumesById:{}},library);
- assert.equal(plan.cast.length,14);
+ assert.equal(plan.cast.length,Object.keys(names).length);
+ assert.ok(plan.cast.includes('hkne'));
  for(const id of plan.cast)for(const speaker of cuesById[id]){
   const selected=plan.performances.get(id).get(speaker);assert.ok(selected?.body&&selected.face,`${id}: ${speaker}`);
   assert.ok(['cmmn',id].includes(selected.character),speaker);

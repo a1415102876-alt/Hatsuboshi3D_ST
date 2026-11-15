@@ -11,13 +11,13 @@
   const SECONDARY_MODEL_CHANNEL_TIMEOUT_MS = 5 * 60 * 1000;
   const DIRECTOR_MODEL_CHANNEL_TIMEOUT_MS = 210 * 1000;
   const FISH_TTS_DEFAULT_MODEL = "s2.1-pro-free";
-  const FISH_TTS_DEFAULT_PROXY_URL = "https://hatsuboshitest.a1415102876.workers.dev/api/fish-tts";
+  const FISH_TTS_DEFAULT_PROXY_URL = "https://tts.sawadaz.xyz/api/fish-tts";
   const FISH_TTS_STORAGE_KEY = "hatsuProduceTtsPreferences";
   let fishTtsRuntimeApiKey = "";
 
   const clone = (value) => JSON.parse(JSON.stringify(value));
   const vnLivePortraitState = {
-    moduleUrl: "/mmd-dialogue-stage/live-portrait.js?v=20261102-actor-pose-v1",
+    moduleUrl: "/mmd-dialogue-stage/live-portrait.js?v=20261115-player-sync-v1",
     director: null,
     sceneSession: 0,
     sceneLoad: null,
@@ -25925,7 +25925,7 @@ ${outputContract("请写 900 字以内的完整校内傍晚场景，从抵达到
   async function ensureNiaLiveBeatPlayer() {
     if (niaLiveBeatPlayer) return niaLiveBeatPlayer;
     if (!niaLiveBeatPlayerLoad) {
-      const url = new URL("nia-live-beat-player.js?v=20261103-fktn-profile-r2-v1", window.HATSU_ASSET_BASE || document.baseURI).href;
+      const url = new URL("nia-live-beat-player.js?v=20261115-player-sync-v1", window.HATSU_ASSET_BASE || document.baseURI).href;
       niaLiveBeatPlayerLoad = import(url).then(({ NiaLiveBeatPlayer }) => {
         const stage = niaLiveEl("niaLiveBeatStage");
         const caption = niaLiveEl("niaLiveCaption");
@@ -26966,7 +26966,7 @@ ${outputContract("请写 900 字以内的完整校内傍晚场景，从抵达到
   async function ensureNiaRadioBeatPlayer() {
     if (niaRadioBeatPlayer) return niaRadioBeatPlayer;
     if (!niaRadioBeatPlayerLoad) {
-      const url = new URL("nia-radio-beat-player.js?v=20261103-fktn-profile-r2-v1", window.HATSU_ASSET_BASE || document.baseURI).href;
+      const url = new URL("nia-radio-beat-player.js?v=20261115-player-sync-v1", window.HATSU_ASSET_BASE || document.baseURI).href;
       niaRadioBeatPlayerLoad = import(url).then(({ NiaRadioBeatPlayer }) => {
         const stage = niaRadioEl("niaRadioBeatStage"), caption = niaRadioEl("niaRadioCaption");
         if (!stage || !caption) throw new Error("广播演出区域不可用");
@@ -27123,7 +27123,7 @@ ${outputContract("请写 900 字以内的完整校内傍晚场景，从抵达到
     if (niaTvBeatPlayer) return niaTvBeatPlayer;
     if (!niaTvBeatPlayerLoad) {
       const generation = niaTvBeatPlayerGeneration;
-      const url = new URL("nia-tv-beat-player.js?v=20261103-fktn-profile-r2-v1", window.HATSU_ASSET_BASE || document.baseURI).href;
+      const url = new URL("nia-tv-beat-player.js?v=20261115-player-sync-v1", window.HATSU_ASSET_BASE || document.baseURI).href;
       niaTvBeatPlayerLoad = import(url).then(({ NiaTvBeatPlayer }) => {
         if (generation !== niaTvBeatPlayerGeneration) throw new Error("电视演出已取消");
         const stage = niaRadioEl("niaRadioBeatStage"), caption = niaRadioEl("niaRadioCaption");
@@ -28505,7 +28505,7 @@ ${outputContract("请写 900 字以内的完整校内傍晚场景，从抵达到
       if (!layer) return null;
       const legacyCanvas = vnLivePortraitCanvas();
       if (legacyCanvas) legacyCanvas.hidden = true;
-      vnLivePortraitState.director = mod.createSceneDirector(layer);
+      vnLivePortraitState.director = mod.createSceneDirector(layer, { sharedStage: new URLSearchParams(window.location.search).get("stage") !== "private" });
       return vnLivePortraitState.director;
     });
     return vnLivePortraitState.sceneLoad;
@@ -29053,7 +29053,7 @@ ${outputContract("请写 900 字以内的完整校内傍晚场景，从抵达到
   function ensureKotoneBeatApp() {
     if (kotoneBeatApp) return Promise.resolve(kotoneBeatApp);
     if (!kotoneBeatLoad) {
-      const url = new URL("../mmd-dialogue-stage/beat-player.js?v=20261103-fktn-profile-r2-v1", document.baseURI || window.location.href).href;
+      const url = new URL("../mmd-dialogue-stage/beat-player.js?v=20261115-player-sync-v1", document.baseURI || window.location.href).href;
       kotoneBeatLoad = import(url).then((mod) => {
         const host = document.getElementById("vnBeatHost");
         if (!host || typeof mod.BeatPlayerApp !== "function") return null;

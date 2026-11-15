@@ -216,9 +216,9 @@ function flare(entry = {}) {
     };
 }
 
-// Screen-space post modules taken from the volume stack. Grading and fog stay
-// in the scene shader; this is only what a fullscreen pass can add.
-export function scenePost(stack = {}, active = {}) {
+// Each 3D scene keeps its own resolved volume grade in the final HDR composite.
+// Fog and lightmap tint stay in scene shading, including the direct/LDR path.
+export function scenePost(stack = {}, active = {}, sceneId = null) {
     const on = name => !!active[name];
     const bloom = stack.VLBloom || {};
     const diffusion = stack.VLDiffusion || {};
@@ -227,6 +227,8 @@ export function scenePost(stack = {}, active = {}) {
     const vignette = stack.Vignette || {};
     const center = vignette.center || {};
     return {
+        sceneId,
+        grading: sceneGrade(stack, active),
         bloom: {
             enabled: on('VLBloom'),
             intensity: Number(bloom.intensity) || 0,
@@ -234,6 +236,7 @@ export function scenePost(stack = {}, active = {}) {
             diffusion: Number(bloom.diffusion) || 0,
             color: linearColor(colorArray(bloom.color)),
         },
+        starStreak: { enabled: on('VLStarStreak') },
         diffusion: {
             enabled: on('VLDiffusion'),
             diffusion: Number(diffusion.diffusion) || 0,
@@ -264,16 +267,35 @@ function colorArray(value, fallback = [1, 1, 1]) {
     return [value.r ?? value[0] ?? fallback[0], value.g ?? value[1] ?? fallback[1], value.b ?? value[2] ?? fallback[2]];
 }
 
-// Scene-only grading taken from the resolved volume stack. Actors keep the
-// stage look; the scene shader applies this so lightmap HDR does not clip.
-export function sceneGrade(stack = {}) {
-    const adjust = stack.ColorAdjustments || {};
-    const tone = stack.VLTonemapping || {};
-    const lightmap = stack.VLLightmapVolume || {};
+// Grading from this camera's resolved volume stack. The scene shader uses it
+// directly in LDR; HDR draws defer it until scene and actors are composited.
+export function sceneGrade(stack = {}, active = null) {
+    // Serialized inactive components still contain values. Respect the resolved
+    // activation map so an unused tint or tonemapper cannot affect this scene.
+    const component = name => (!active || active[name]) ? stack[name] || {} : {};
+    const adjust = component('ColorAdjustments');
+    const tone = component('VLTonemapping');
+    const lightmap = component('VLLightmapVolume');
     const lightmapColor = linearColor(colorArray(lightmap.color));
     const lightmapIntensity = Number.isFinite(lightmap.intensity) ? lightmap.intensity : 1;
-    const smh = stack.ShadowsMidtonesHighlights || {};
+    const smh = component('ShadowsMidtonesHighlights');
+    const lgg = liftGammaGain(component('LiftGammaGain'));
+    const split = component('SplitToning');
+    const mixer = component('ChannelMixer');
+    const balance = component('WhiteBalance');
     return {
+        whiteBalance: colorBalanceToLMS(Number(balance.temperature) || 0, Number(balance.tint) || 0),
+        splitShadows: [...colorArray(split.shadows, [0.5, 0.5, 0.5]), (Number(split.balance) || 0) / 100],
+        splitHighlights: colorArray(split.highlights, [0.5, 0.5, 0.5]),
+        channelMixer: [
+            [mixer.redOutRedIn ?? 100, mixer.redOutGreenIn ?? 0, mixer.redOutBlueIn ?? 0].map(v => Number(v) / 100),
+            [mixer.greenOutRedIn ?? 0, mixer.greenOutGreenIn ?? 100, mixer.greenOutBlueIn ?? 0].map(v => Number(v) / 100),
+            [mixer.blueOutRedIn ?? 0, mixer.blueOutGreenIn ?? 0, mixer.blueOutBlueIn ?? 100].map(v => Number(v) / 100),
+        ],
+        lift: lgg.lift,
+        gammaInv: lgg.gamma,
+        gain: lgg.gain,
+        hueShift: (Number(adjust.hueShift) || 0) / 360,
         shadows: smhTint(smh.shadows),
         midtones: smhTint(smh.midtones),
         highlights: smhTint(smh.highlights),
@@ -304,6 +326,10 @@ export function sceneActorLight(stack = {}) {
     const angle = actor.mainLightAngle || campus.mainLightAngle || null;
     const colorSource = actor.lightColor || campus.lightColor || null;
     const shadeApply = actor.shadeApplyRatio ?? campus.shadeApplyRatio;
+    const rimAngle = actor.rimAngle ?? campus.rimAngle;
+    const rimColor = actor.rimColor ?? campus.rimColor;
+    const shadeMultiply = actor.shadeColorMultiply ?? campus.shadeColorMultiply;
+    const optionalNumber = value => value != null && Number.isFinite(Number(value)) ? Number(value) : null;
     return {
         hasMainLight: Boolean(angle || colorSource),
         mainLightSpace: Number(actor.mainLightSpace ?? campus.mainLightSpace) || 0,
@@ -313,7 +339,12 @@ export function sceneActorLight(stack = {}) {
         additiveScale: Number(actor.additiveLightScale) || 0,
         additiveSpecularScale: Number.isFinite(Number(actor.additiveLightSpecularScale)) ? Number(actor.additiveLightSpecularScale) : 1,
         shadeApply: Number.isFinite(Number(shadeApply)) ? Number(shadeApply) : 1,
-        matCapOffset: Number.isFinite(Number(actor.matCapOffset)) ? Number(actor.matCapOffset) : 0.3,
+        matCapOffset: optionalNumber(actor.matCapOffset ?? campus.matCapOffset),
+        shadeMultiply: shadeMultiply ? linearColor(colorArray(shadeMultiply)) : null,
+        rimAngle: rimAngle ? [Number(rimAngle.x ?? rimAngle[0]) || 0, Number(rimAngle.y ?? rimAngle[1]) || 0] : null,
+        rimColor: rimColor ? linearColor(colorArray(rimColor)) : null,
+        rimPower: optionalNumber(actor.rimPower ?? campus.rimPower),
+        rimBaseColorRatio: optionalNumber(actor.rimBaseColorRatio ?? campus.rimBaseColorRatio),
         eyeHighlightColor: linearColor(colorArray(actor.eyeHighlightColor)),
         eyeReflectionColor: linearColor(colorArray(actor.eyeReflectionColor)),
         giScale: Number(actor.giScale ?? campus.giScale) || 0,
@@ -334,6 +365,29 @@ export function sceneSphereFog(stack = {}) {
         density,
         maxAmount: Number.isFinite(fog.maxAmount) ? fog.maxAmount : 1,
         color: linearColor(colorArray(fog.color)),
+    };
+}
+
+export function sceneDepthFog(stack = {}, active = {}, { densityScale = 1 } = {}) {
+    const fog = stack.DepthFog || {};
+    const scale = Number.isFinite(densityScale) ? Math.max(0, densityScale) : 1;
+    const density = Math.max(0, Number(fog.density) || 0) * scale;
+    return {
+        enabled: active.DepthFog === true && density > 0,
+        density,
+        maxAmount: Number.isFinite(fog.maxAmount) ? Math.max(0, Math.min(1, fog.maxAmount)) : 1,
+        color: linearColor(colorArray(fog.color, [0.5, 0.6, 0.7])),
+        applySkybox: Boolean(fog.applySkybox),
+    };
+}
+
+export function sceneCloudLayers(stack = {}, active = {}) {
+    const clouds = stack.VLCloud || {};
+    return {
+        enabled: active.VLCloud === true,
+        speed: Number.isFinite(clouds.multiplySpeed) ? clouds.multiplySpeed : 1,
+        offsetY: Number(clouds.cloudOffsetY) || 0,
+        color: [...linearColor(colorArray(clouds.cloudEmissionColor)), 1],
     };
 }
 
@@ -425,7 +479,10 @@ export function smhTint(value) {
     return [v.x, v.y, v.z].map(channel => Math.max(srgbToLinear(channel ?? 1) + weight, 0));
 }
 
-// Uchimura "GT" curve, mirrored by the GLSL in gakumas-scene.js.
+// Uchimura "GT" curve as the game's LutBuilderHdr evaluates it, mirrored by
+// GRADE_GLSL. The game switches to the shoulder at linearStart + linearLength
+// (not at the paper's S0), so the linear section runs past 1 (to 1.4 with
+// the common 0.9 / 0.5 settings). Verified against a captured 32^3 LUT.
 export function gtTonemap(x, { linearStart: m = 0.22, linearLength: l = 0.4, contrast: a = 1, black: c = 1.33, pedestal: b = 0, max: P = 1 } = {}) {
     const l0 = ((P - m) * l) / a;
     const S0 = m + l0;
@@ -434,12 +491,120 @@ export function gtTonemap(x, { linearStart: m = 0.22, linearLength: l = 0.4, con
     const CP = -C2 / P;
     const t = Math.max(0, Math.min(1, x / m));
     const w0 = 1 - t * t * (3 - 2 * t);
-    const w2 = x >= S0 ? 1 : 0;
+    const w2 = x >= m + l ? 1 : 0;
     const w1 = 1 - w0 - w2;
     const T = m * (Math.max(x, 0) / m) ** c + b;
     const S = P - (P - S1) * Math.exp(CP * (x - S0));
     const L = m + a * (x - m);
     return T * w0 + L * w1 + S * w2;
+}
+
+const LUMA = [0.212673, 0.715152, 0.072175];
+const luma3 = c => c[0] * LUMA[0] + c[1] * LUMA[1] + c[2] * LUMA[2];
+
+// ColorUtils.PrepareLiftGammaGain.
+export function liftGammaGain(entry = {}) {
+    const vec = (v, fallback) => ({ x: v?.x ?? fallback, y: v?.y ?? fallback, z: v?.z ?? fallback, w: v?.w ?? 0 });
+    const lift = vec(entry.lift, 1);
+    const gamma = vec(entry.gamma, 1);
+    const gain = vec(entry.gain, 1);
+    const centred = v => {
+        const rgb = [v.x, v.y, v.z];
+        const l = luma3(rgb);
+        return rgb.map(c => c - l + v.w);
+    };
+    return {
+        lift: centred(lift),
+        gamma: centred(gamma).map(c => 1 / Math.max(c + 1, 1e-3)),
+        gain: centred(gain).map(c => c + 1),
+    };
+}
+
+// ColorUtils.ColorBalanceToLMSCoeffs (white balance in LMS space).
+export function colorBalanceToLMS(temperature = 0, tint = 0) {
+    const t1 = temperature / 65;
+    const t2 = tint / 65;
+    const x = 0.31271 - t1 * (t1 < 0 ? 0.1 : 0.05);
+    const y = 2.87 * x - 3 * x * x - 0.27509507 + t2 * 0.05;
+    const X = x / y;
+    const Z = (1 - x - y) / y;
+    const lms = [0.7328 * X + 0.4296 - 0.1624 * Z, -0.7036 * X + 1.6975 + 0.0061 * Z, 0.003 * X + 0.0136 + 0.9834 * Z];
+    const d65 = [0.949237, 1.03542, 1.08728];
+    return d65.map((w, i) => w / lms[i]);
+}
+
+const LIN_TO_LMS = [[0.390405, 0.549941, 0.008926], [0.070842, 0.963172, 0.001358], [0.023108, 0.128021, 0.936245]];
+const LMS_TO_LIN = [[2.85847, -1.62879, -0.024891], [-0.210182, 1.1582, 0.000324], [-0.041812, -0.118169, 1.06867]];
+const mul3 = (m, c) => m.map(row => row[0] * c[0] + row[1] * c[1] + row[2] * c[2]);
+const toLogC = x => 0.244161 * Math.log10(5.555556 * Math.max(x, 0) + 0.047996) + 0.386036;
+const fromLogC = x => (10 ** ((x - 0.386036) / 0.244161) - 0.047996) / 5.555556;
+
+function softLight(c, s) {
+    // URP SoftLight with the tint lerped toward 0.5 by the split weight.
+    return s < 0.5 ? 2 * c * s + c * c * (1 - 2 * s) : Math.sqrt(c) * (2 * s - 1) + 2 * c * (1 - s);
+}
+
+function rgbToHsv(c) {
+    const [r, g, b] = c;
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const d = max - min;
+    let h = 0;
+    if (d > 1e-10) h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    h = (h / 6 + 1) % 1;
+    return [h, max > 1e-10 ? d / max : 0, max];
+}
+
+function hsvToRgb([h, s, v]) {
+    return [0, 2 / 3, 1 / 3].map(o => {
+        const p = Math.abs(((h + 1 + o) % 1) * 6 - 3);
+        return v * (1 + s * (Math.min(Math.max(p - 1, 0), 1) - 1));
+    });
+}
+
+/**
+ * Reference implementation of the full grade (exposure through tonemap) in
+ * the order of the game's LutBuilderHdr. GRADE_GLSL mirrors it; tests check
+ * it against values read from a captured game LUT.
+ */
+export function gradeColorReference(input, grade) {
+    let c = input.map(v => v * (grade.exposure ?? 1));
+    const wb = grade.whiteBalance || [1, 1, 1];
+    c = mul3(LMS_TO_LIN, mul3(LIN_TO_LMS, c).map((v, i) => v * wb[i]));
+    c = c.map(v => fromLogC((toLogC(v) - ACESCC_MIDGRAY) * (grade.contrast ?? 1) + ACESCC_MIDGRAY));
+    const filter = grade.colorFilter || [1, 1, 1];
+    c = c.map((v, i) => Math.max(v * filter[i], 0));
+    // Split toning in gamma space.
+    const shadows = grade.splitShadows || [0.5, 0.5, 0.5, 0];
+    const highlights = grade.splitHighlights || [0.5, 0.5, 0.5];
+    c = c.map(v => v ** (1 / 2.2));
+    const l = Math.min(Math.max(luma3(c.map(v => Math.min(v, 1))) + shadows[3], 0), 1);
+    c = c.map((v, i) => softLight(v, (shadows[i] - 0.5) * (1 - l) + 0.5));
+    c = c.map((v, i) => softLight(v, (highlights[i] - 0.5) * l + 0.5));
+    c = c.map(v => Math.abs(v) ** 2.2);
+    c = mul3(grade.channelMixer || [[1, 0, 0], [0, 1, 0], [0, 0, 1]], c);
+    // Shadows / midtones / highlights.
+    const [s0, s1, h0, h1] = grade.smhLimits || [0, 0.3, 0.55, 1];
+    const y = luma3(c);
+    const smooth = (a, b, x) => { const t = Math.min(Math.max((x - a) / (b - a), 0), 1); return t * t * (3 - 2 * t); };
+    const ws = 1 - smooth(s0, s1, y);
+    const wh = smooth(h0, h1, y);
+    const wm = 1 - ws - wh;
+    const sh = grade.shadows || [1, 1, 1], mid = grade.midtones || [1, 1, 1], hi = grade.highlights || [1, 1, 1];
+    c = c.map((v, i) => v * (sh[i] * ws + mid[i] * wm + hi[i] * wh));
+    // Lift / gamma / gain.
+    const lift = grade.lift || [0, 0, 0], gammaInv = grade.gammaInv || [1, 1, 1], gain = grade.gain || [1, 1, 1];
+    c = c.map((v, i) => { const t = v * gain[i] + lift[i]; return Math.sign(t) * Math.abs(t) ** gammaInv[i]; });
+    // Hue shift, then saturation around luminance.
+    if (grade.hueShift) {
+        const hsv = rgbToHsv(c);
+        hsv[0] = (hsv[0] + grade.hueShift + 1) % 1;
+        c = hsvToRgb(hsv);
+    }
+    const y2 = luma3(c);
+    c = c.map(v => Math.max(y2 + (v - y2) * (grade.saturation ?? 1), 0));
+    if (grade.tone?.enabled) c = c.map(v => gtTonemap(v, grade.tone));
+    return c;
 }
 
 // Unity SphericalHarmonicsL2 (channel-major) into nine RGB coefficients.
@@ -686,4 +851,19 @@ export function sceneLayoutOptions(sidecar) {
         id,
         label: layout.label ? `${layout.label}（${id}）` : labels[id] ? `${labels[id]}（${id}）` : id,
     }));
+}
+
+/**
+ * Alpha-tested environment materials exported with `_Cutoff` 0 (chain-link
+ * fences, nets) still show their holes in game: URP renders _ALPHATEST_ON
+ * with alpha-to-coverage, so texture alpha decides visibility even when the
+ * cutoff threshold never discards. Those materials must be alpha-blended
+ * here; a discard-only path draws them as solid panels.
+ */
+export function usesAlphaCoverage({ keywords = [], floats = {}, alphaTest = 0, blended = false, hasMap = false } = {}) {
+    if (blended || !hasMap) return false;
+    const alphaTested = (Array.isArray(keywords) && keywords.includes('_ALPHATEST_ON')) || Number(alphaTest) > 0;
+    if (!alphaTested) return false;
+    const cutoff = Number(floats?._Cutoff ?? alphaTest ?? 0);
+    return !(cutoff > 0.004);
 }

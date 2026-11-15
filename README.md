@@ -36,7 +36,7 @@ vercel.json            静态发布与云资源路由
 - Loading 图案与 Q 版小人随站部署，可以在大资源下载前显示。
 - Fish TTS 沿用已有 Cloudflare Worker 地址，用户仍可在设置中修改代理。此仓库不会把 Worker 自动部署到 Vercel，也不包含 API 密钥。
 
-Fish 日语发音词典保存在 `hatsu-produce-local/fish-tts.js` 的 `PRONUNCIATION_RULES`，首批为 13 位偶像的完整姓名、初星和毬。每次只发送台词命中的规则，字幕保持原文。`cloudflare/worker.js` 保存支持 `pronunciation_dictionary` 透传的代理实现，Vercel 构建不部署它；现有 Worker 可以通过 Cloudflare 的脚本 content 接口更新并保留静态资源和绑定。
+Fish 日语发音词典保存在 `hatsu-produce-local/fish-tts.js` 的 `PRONUNCIATION_RULES`，包含偶像姓名、初星和毬，香名江使用 Hiwatari Kanae 的读音。每次只发送台词命中的规则，字幕保持原文。默认代理为 `https://tts.sawadaz.xyz/api/fish-tts`。`cloudflare/worker.js` 保存支持 `pronunciation_dictionary` 透传的代理实现，Vercel 构建不部署它；现有 Worker 可以通过 Cloudflare 的脚本 content 接口更新并保留静态资源和绑定。
 
 `tools/generate-fish-pronunciation.py` 可用 pyopenjtalk（Windows 可用 pyopenjtalk-plus）将指定假名转换为 Fish 的日语音素格式。它只在开发时使用，浏览器不需要 Python。重音是 OpenJTalk 的默认推断，需按试听调整。修改词条后更新客户端对应值，并递增 `PRONUNCIATION_VERSION`。
 
@@ -63,5 +63,15 @@ npm test
 ```
 
 同步工具只读取原工程，复制运行代码和本地界面资源，并检查常规图集在 R2 的可用性。模型大文件、解包目录、工程、凭据、日志、测试备份与源目录的 `.git` 不会被复制。`docs/source-snapshot.json` 记录本次同步文件数及媒体缺项。
+
+单独同步独立 Player 的最新本地代码时运行：
+
+```sh
+npm run sync:player -- "G:/SillyTavern/gakumas-player"
+npm run build
+npm test
+```
+
+此命令读取指定 Player 工作区，包含尚未提交的运行代码；更新舞台、播放器、编辑器、TTS、资源清单和回归测试，并验证随站发布资源的大小与 SHA-256。酒馆世界书读取、NIA 嵌入入口及育成业务保留，资源路径适配本仓库目录。不会删除目标目录的额外文件。`docs/player-snapshot.json` 记录同步来源和文件清单；完整原工程同步后可再次运行此命令更新 Player。
 
 不要手工提交生成的 `dist/`、`.vercel/` 或 `.env`。此仓库保留源代码中的第三方许可声明；原游戏素材的权利归各自权利人。
